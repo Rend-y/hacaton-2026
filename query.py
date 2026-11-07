@@ -49,6 +49,13 @@ def _output_path():
 
 def _run_batch(args, loaded, values):
     rows = _questions(values)
+    if getattr(args, 'evaluate', False):
+        from query_evaluation import plan_query_evaluation
+        # До API проверяются только формулировки вопросов и исходные документы.
+        # Правильные ответы читаются отдельным этапом после завершения генерации.
+        plan = plan_query_evaluation(rows, loaded['documents'], loaded['read_errors'], cli.ROOT / 'data' / 'public')
+        cli.emit('Для оценки сопоставлено вопросов: %s; пакет: %s. Эталоны ответов ещё не загружались.' %
+                 (len(plan['matches']), plan['package']))
     # Используем ту же консервативную оценку контекста, что и API-клиент. Большой
     # набор отклоняется до запроса, а не урезается скрытно до удобного размера.
     payload = messages(args.mode, loaded['documents'], rows, loaded['read_errors'])
@@ -60,6 +67,12 @@ def _run_batch(args, loaded, values):
     prepared = {'questions': rows, 'package_data': {'INPUT': (loaded['documents'], loaded['read_errors'])},
                 'source_metadata': {'sources': loaded['sources'], 'skipped': loaded['skipped']}}
     code = cli.run(options, prepared=prepared)
+    if getattr(args, 'evaluate', False):
+        from query_evaluation import evaluate_query_run
+        from report import write_run_report
+        cli.emit('Генерация завершена. Оцениваем только заданные вопросы по публичным эталонам.')
+        evaluate_query_run(output, cli.ROOT / 'data' / 'public')
+        write_run_report(output)
     answers = json.loads((output / 'answers.json').read_text(encoding='utf-8'))
     questions = {row['id']: row['question'] for row in rows}
     cli.emit('\nОтветы по документам:')

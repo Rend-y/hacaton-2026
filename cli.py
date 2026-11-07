@@ -443,6 +443,7 @@ def parser():
     query.add_argument('--atacment', required=True, nargs='+', help='Путь к файлу или папке с документами; можно указать несколько путей')
     query.add_argument('--promt', required=True, nargs='+', help='Вопрос в кавычках, несколько вопросов или путь к файлу вопросов TXT/MD/CSV/JSON')
     query.add_argument('--mode', choices=['baseline', 'verified'], default='verified')
+    query.add_argument('--evaluate', action='store_true', help='После ответа оценить выбранные вопросы, если документы и вопросы сопоставимы с публичным эталоном')
     # Простая команда показывает только два входа и режим. Настройки конвейера
     # остаются фиксированными; подробные параметры доступны у команды run.
     query.set_defaults(workers=1, repair_attempts=2, max_tokens=16384, timeout=300)
@@ -468,7 +469,20 @@ def main(argv=None):
             return 0
         from evaluation import evaluate_run, compare_runs
         if args.command == 'evaluate':
-            evaluate_run(Path(args.run).resolve(), Path(args.data).resolve())
+            run_dir = Path(args.run).resolve()
+            inputs_path = run_dir / 'inputs.json'
+            snapshot = json.loads(inputs_path.read_text(encoding='utf-8')) if inputs_path.is_file() else {}
+            # Сохранённые query имеют собственные INPUT-ID: оценка всего эталона
+            # без сопоставления дала бы ложные пропуски вместо качества ответов.
+            query_rows = snapshot.get('questions', []) if isinstance(snapshot, dict) else []
+            is_query = (isinstance(query_rows, list) and bool(query_rows)
+                        and all(isinstance(row, dict) and row.get('package') == 'INPUT'
+                                and str(row.get('id', '')).startswith('INPUT-') for row in query_rows))
+            if is_query:
+                from query_evaluation import evaluate_query_run
+                evaluate_query_run(run_dir, Path(args.data).resolve())
+            else:
+                evaluate_run(run_dir, Path(args.data).resolve())
             emit('HTML-отчёт: ' + str(write_run_report(Path(args.run))))
         else:
             report = compare_runs(Path(args.baseline).resolve(), Path(args.verified).resolve(), Path(args.output).resolve())

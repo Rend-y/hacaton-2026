@@ -198,14 +198,14 @@ class QueryTests(unittest.TestCase):
         self.assertEqual(self.read_json(self.output / 'manifest.json')['mode'], 'baseline')
         self.assertEqual(baseline.system_prompts, [BASELINE])
 
-    def test_query_requires_both_inputs_and_has_only_three_user_parameters(self):
+    def test_query_requires_both_inputs_and_shows_mode_and_evaluation(self):
         # Справка — пользовательский контракт: лишние режимы ввода больше не нужны.
         output = io.StringIO()
         with contextlib.redirect_stdout(output), self.assertRaises(SystemExit) as caught:
             cli.parser().parse_args(['query', '--help'])
         self.assertEqual(caught.exception.code, 0)
         help_text = output.getvalue()
-        for option in ('--atacment', '--promt', '--mode'):
+        for option in ('--atacment', '--promt', '--mode', '--evaluate'):
             self.assertIn(option, help_text)
         for option in ('--output', '--inspect', '--questions', '--timeout', '--workers', '--max-tokens'):
             self.assertNotIn(option, help_text)

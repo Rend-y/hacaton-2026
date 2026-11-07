@@ -120,6 +120,9 @@ def build_run_model(run_dir: Path) -> dict:
         if assessed.get('by_type') != by_type:
             raise ValueError('Разбивка по типам не совпадает с evaluation.csv')
         quality = {**metrics, 'by_type': by_type}
+        if assessed.get('scope') == 'matched_query_questions':
+            warnings.append('Оценена выбранная группа. Вопросов в оценке: %s; во всём публичном наборе: %s. Индекс относится только к этой группе.' %
+                            (metrics['n'], assessed.get('source_question_count', 'неизвестное число')))
         verdicts = {r['id']: r for r in rows}
         if set(verdicts) != set(selected_ids):
             warnings.append('Оценщик проверил весь эталон: %s вопросов; в запуск выбрано %s. Пропуски входят в знаменатель.' % (metrics['n'], len(selected_ids)))
