@@ -9,7 +9,7 @@
 Установите Python 3.10+ и клонируйте ветку с решением. Команды ниже предназначены для PowerShell:
 
 ```powershell
-git clone --branch codex/procurement-cli https://github.com/Rend-y/hacaton-2026.git
+git clone --branch procurement-cli https://github.com/Rend-y/hacaton-2026.git
 cd hacaton-2026
 Copy-Item .env.example .env
 ```
