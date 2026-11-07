@@ -7,7 +7,7 @@
 - `packages/P01...P06`: документы шести закупок в виде текстовых файлов (UTF-8).
 - `questions.csv`: вопросы, колонки `id;package;question`. Номер вопроса начинается с номера закупки: `P03-07` относится к `packages/P03`.
 - `answers_public.json`: правильные ответы. Поля: `status` (ответ, расхождение, нет в документах), `expected` (что должно быть в ответе), `quote` и `file` (где это написано), `type` (тип вопроса).
-- `check.py`: оценщик.
+- `../../src/evaluation/check.py`: оценщик.
 
 ## Формат ответа
 
@@ -30,8 +30,8 @@ P01-13;нет в документах;;;
 ## Как проверить себя
 
 ```
-python check.py answers.csv
-python check.py answers.csv --out result.csv
+python ../../src/evaluation/check.py answers.csv --gold answers_public.json --packages packages
+python ../../src/evaluation/check.py answers.csv --gold answers_public.json --packages packages --out result.csv
 ```
 
 Оценщик печатает индекс доверия, разбивку по типам вопросов и список вопросов, где ИИ обманул, с причиной. С `--out` пишет итог по каждому вопросу в CSV, из него удобно строить графики "было/стало".
