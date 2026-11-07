@@ -4,6 +4,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
+# До 15 минут на одну HTTP-попытку; сетевые повторы учитываются отдельно.
+DEFAULT_TIMEOUT_SECONDS = 900
 
 
 @dataclass(frozen=True)
@@ -16,7 +18,7 @@ class QueryOptions:
     evaluate: bool = False
     repair_attempts: int = 2
     max_tokens: int = 16384
-    timeout: float = 300
+    timeout: float = DEFAULT_TIMEOUT_SECONDS
 
 
 @dataclass(frozen=True)
@@ -27,4 +29,4 @@ class RunOptions:
     output: Path
     repair_attempts: int = 2
     max_tokens: int = 16384
-    timeout: float = 300
+    timeout: float = DEFAULT_TIMEOUT_SECONDS

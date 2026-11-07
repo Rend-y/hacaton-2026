@@ -85,7 +85,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(arguments.arguments['mode'], 'verified')
         self.assertFalse(arguments.arguments['evaluate'])
         defaults = settings.QueryOptions(atacment=['contract.txt'], promt=['Срок?'])
-        self.assertEqual((defaults.repair_attempts, defaults.max_tokens, defaults.timeout), (2, 16384, 300))
+        self.assertEqual((defaults.repair_attempts, defaults.max_tokens, defaults.timeout), (2, 16384, 900))
         _, arguments, _ = cli_commands.app.parse_args(
             ['evaluate', '--run', 'runs/example'], exit_on_error=False, print_error=False)
         self.assertEqual(Path(arguments.arguments['run']), Path('runs/example'))

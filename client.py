@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from progress import heartbeat
+from settings import DEFAULT_TIMEOUT_SECONDS
 
 
 def load_env(path):
@@ -69,7 +70,7 @@ class RateLimiter:
 
 class Client:
     """Выполняет запросы к /chat/completions и повторяет только временные сбои."""
-    def __init__(self, key, base_url, model, timeout=300, max_tokens=16384):
+    def __init__(self, key, base_url, model, timeout=DEFAULT_TIMEOUT_SECONDS, max_tokens=16384):
         if not key:
             raise ValueError('Set ITFEST_API_KEY in .env or the environment')
         parsed = urlparse(base_url)
