@@ -1,4 +1,4 @@
-# Запускает CLI из локального окружения; явный ITFEST_PYTHON имеет приоритет.
+﻿# Запускает CLI из локального окружения; явный ITFEST_PYTHON имеет приоритет.
 $ErrorActionPreference = 'Stop'
 $pythonPath = $env:ITFEST_PYTHON
 if (-not $pythonPath) {

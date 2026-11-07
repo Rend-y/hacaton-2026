@@ -67,6 +67,14 @@ def compare(
 
 
 # Ограничение источников проверяет библиотека ещё до чтения файлов отчёта.
+@app.command(name='check-all')
+def check_all(*, mode: Literal['baseline', 'verified'] = 'verified') -> int:
+    """Все вопросы поставляемого набора: одна выгрузка, общая оценка и HTML."""
+    from benchmark import run_public
+    return run_public(mode)
+
+
+# Пользователь выбирает единственный источник для пересборки HTML.
 report_source = Group('Источник отчёта: выберите один', validator=LimitedChoice(min=1, max=1))
 
 

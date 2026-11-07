@@ -11,6 +11,20 @@ class CliEntrypointTests(unittest.TestCase):
 
     root = Path(__file__).resolve().parents[1]
 
+    def test_scripts_parse_in_windows_powershell_51(self):
+        """Настоящий парсер 5.1 обнаруживает потерю BOM у русского текста скриптов."""
+        powershell = Path(os.environ.get('WINDIR', 'C:/Windows')) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
+        if not powershell.is_file():
+            self.skipTest('Windows PowerShell 5.1 доступен только на Windows')
+        for name in ('run.ps1', 'setup.ps1'):
+            path = str(self.root / name).replace("'", "''")
+            command = ("$tokens=$null; $errors=$null; "
+                       "[System.Management.Automation.Language.Parser]::ParseFile('" + path +
+                       "', [ref]$tokens, [ref]$errors) > $null; if ($errors.Count) { exit 1 }")
+            result = subprocess.run([str(powershell), '-NoProfile', '-Command', command],
+                                    capture_output=True, timeout=15, check=False)
+            self.assertEqual(result.returncode, 0, name)
+
     def invoke(self, *arguments):
         environment = dict(os.environ, PYTHONIOENCODING='utf-8', NO_COLOR='1')
         environment.pop('ITFEST_API_KEY', None)

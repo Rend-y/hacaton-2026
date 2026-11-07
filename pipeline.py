@@ -1,7 +1,7 @@
 """Выполнение одного запроса по уже прочитанным документам и сохранение результата.
 
 Этот слой не читает датасеты, не разбирает CLI и не выбирает папки по имени.
-Все переданные документы составляют один контекст для всех переданных вопросов.
+Каждая группа документов передаётся только связанным с ней вопросам.
 """
 from datetime import datetime, timezone
 import hashlib
@@ -22,15 +22,25 @@ import settings
 
 
 def run(options: RunOptions, prepared: dict) -> int:
+    """Обычный query: один произвольный комплект без требований к папкам."""
+    return run_groups(options, prepared['questions'],
+                      {'INPUT': (prepared['documents'], prepared['read_errors'])},
+                      prepared.get('source_metadata', {}))
+
+
+def run_groups(options: RunOptions, questions, package_data, source_metadata=None) -> int:
     """Сохраняет снимок, выполняет запрос с проверками и формирует локальный отчёт."""
     load_env(settings.ROOT / '.env')
-    questions = prepared['questions']
-    documents, read_errors = prepared['documents'], prepared['read_errors']
+    grouped = {}
+    for question in questions:
+        grouped.setdefault(question['package'], []).append(question)
+    if not questions or set(grouped) != set(package_data) or len({q['id'] for q in questions}) != len(questions):
+        raise ValueError('Некорректная связь вопросов и комплектов документов.')
     # INPUT и packages сохраняются только как формат прежних артефактов. Это не
     # имена требуемых директорий: документы здесь уже прочитаны из любых путей.
-    input_data = {'questions': questions, 'packages': {'INPUT': (documents, read_errors)}}
+    input_data = {'questions': questions, 'packages': package_data}
     fingerprint = hashlib.sha256(json.dumps(input_data, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
-    input_data['source_metadata'] = prepared.get('source_metadata', {})
+    input_data['source_metadata'] = source_metadata or {}
     output = Path(options.output).resolve()
     if output.exists() and any(output.iterdir()):
         raise ValueError('Output directory is not empty; choose a new output to preserve prior runs')
@@ -64,18 +74,25 @@ def run(options: RunOptions, prepared: dict) -> int:
                 'workers': 1, 'status': 'running', 'stats': dict(client.stats)}
     write_json(output / 'manifest.json', manifest)
     progress('Старт: режим %s; модель %s; вопросов %s; документов %s.' %
-             (options.mode, client.model, len(questions), len(documents)))
+             (options.mode, client.model, len(questions), sum(len(pair[0]) for pair in package_data.values())))
     progress('Входные данные и промпты сохранены. Эталоны не загружались; журнал этапов: ' + str(output / 'progress.log'))
-    try:
-        answers = process_questions(client, options.mode, 'INPUT', questions, documents,
-                                    read_errors, options.repair_attempts, trace, progress)
-    except Exception as exc:
-        # Технический сбой явно отмечается в артефактах и не маскируется верным ответом.
-        reason = 'Internal input failure: ' + type(exc).__name__
-        trace({'package': 'INPUT', 'event': 'internal_error', 'error': reason})
-        progress('[INPUT] Внутренняя ошибка: %s; сохраняем осторожные отказы.' % reason)
-        answers = {q['id']: {**abstain(q, reason), 'error_type': 'internal'} for q in questions}
-    save_answers(output, questions, answers)
+    answers = {}
+    for name, rows in grouped.items():
+        documents, read_errors = package_data[name]
+        try:
+            answers.update(process_questions(client, options.mode, name, rows, documents,
+                                            read_errors, options.repair_attempts, trace, progress))
+        except Exception as exc:
+            # Сбой одной группы не теряет ответы других; отказ отмечается техническим.
+            reason = 'Internal input failure: ' + type(exc).__name__
+            trace({'package': name, 'event': 'internal_error', 'error': reason})
+            progress('[%s] Внутренняя ошибка: %s.' % (name, reason))
+            answers.update({q['id']: {**abstain(q, reason), 'error_type': 'internal'} for q in rows})
+        save_answers(output, questions, answers)
+        manifest.update(completed_questions=len(answers), stats=dict(client.stats),
+                        elapsed_seconds=round(time.monotonic() - started, 3))
+        write_json(output / 'manifest.json', manifest)
+        progress('Общий результат сохранён: %s/%s вопросов.' % (len(answers), len(questions)))
     progress('Сохранены answers.csv и answers.json; готово %s/%s вопросов.' % (len(answers), len(questions)))
     failures = [answer for answer in answers.values() if answer.get('error_type')]
     manifest.update(status='completed_with_errors' if failures else 'completed',
