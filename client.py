@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from progress import heartbeat
-from settings import DEFAULT_TIMEOUT_SECONDS
+from settings import DEFAULT_TIMEOUT_SECONDS, DEFAULT_MAX_TOKENS
 
 
 def load_env(path):
@@ -39,6 +39,10 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         # Не передаём секретный ключ другому адресу при перенаправлении HTTP.
         return None
+
+
+class ResponseTruncated(ApiError):
+    """Модель исчерпала бюджет ответа; движок может разделить группу вопросов."""
 
 
 class RateLimiter:
@@ -70,7 +74,7 @@ class RateLimiter:
 
 class Client:
     """Выполняет запросы к /chat/completions и повторяет только временные сбои."""
-    def __init__(self, key, base_url, model, timeout=DEFAULT_TIMEOUT_SECONDS, max_tokens=16384):
+    def __init__(self, key, base_url, model, timeout=DEFAULT_TIMEOUT_SECONDS, max_tokens=DEFAULT_MAX_TOKENS):
         if not key:
             raise ValueError('Set ITFEST_API_KEY in .env or the environment')
         parsed = urlparse(base_url)
@@ -125,7 +129,7 @@ class Client:
                         for field in ('prompt_tokens', 'completion_tokens'):
                             self.stats[field] += int(usage.get(field) or 0)
                     if choice.get('finish_reason') == 'length':
-                        raise ApiError('Model response truncated: increase --max-tokens or reduce question batch')
+                        raise ResponseTruncated('Model response truncated: output token limit reached')
                     if not isinstance(content, str) or not content.strip():
                         raise ApiError('Model returned no answer text')
                     report('api_response', elapsed_seconds=time.monotonic() - started,

@@ -6,6 +6,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 # До 15 минут на одну HTTP-попытку; сетевые повторы учитываются отдельно.
 DEFAULT_TIMEOUT_SECONDS = 900
+# Бюджет ответа включает токены, которые провайдер тратит на рассуждение модели.
+DEFAULT_MAX_TOKENS = 32768
 
 
 @dataclass(frozen=True)
@@ -17,7 +19,7 @@ class QueryOptions:
     mode: str = 'verified'
     evaluate: bool = False
     repair_attempts: int = 2
-    max_tokens: int = 16384
+    max_tokens: int = DEFAULT_MAX_TOKENS
     timeout: float = DEFAULT_TIMEOUT_SECONDS
 
 
@@ -28,5 +30,5 @@ class RunOptions:
     mode: str
     output: Path
     repair_attempts: int = 2
-    max_tokens: int = 16384
+    max_tokens: int = DEFAULT_MAX_TOKENS
     timeout: float = DEFAULT_TIMEOUT_SECONDS

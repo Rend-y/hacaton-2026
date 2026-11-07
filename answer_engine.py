@@ -7,13 +7,14 @@ import re
 import time
 
 from answers import abstain, calculate, parse_answers
-from client import ApiError
+from client import ApiError, ResponseTruncated
 from progress import RunLog, emit
 from prompts import messages
 from validation import norm, validate_answer
 
 
-def process_questions(client, mode, package, questions, documents, read_errors, attempts, trace, progress=None):
+def process_questions(client, mode, package, questions, documents, read_errors, attempts, trace, progress=None,
+                      *, _start_attempt=0, _correction=None, _batch='root'):
     """Обрабатывает общий комплект документов; повторяет только ответы с ошибками проверок.
 
     В baseline содержательные ошибки сохраняются для честного исходного замера.
@@ -21,7 +22,11 @@ def process_questions(client, mode, package, questions, documents, read_errors, 
     """
     accepted = {}
     pending = questions[:]
-    correction = None
+    correction = _correction
+    original_trace = trace
+
+    def trace(event):
+        original_trace({'batch': _batch, **event})
     log = progress if progress is not None else RunLog(None, emit)
 
     def say(message):
@@ -59,7 +64,7 @@ def process_questions(client, mode, package, questions, documents, read_errors, 
         say('Нет читаемых документов: API не вызываем, возвращаем «не знаю».')
         trace({'package': package, 'event': 'unreadable', 'read_errors': read_errors})
         return {q['id']: {**abstain(q, '; '.join(read_errors)), 'error_type': 'input_read'} for q in questions}
-    for attempt in range(1 + (attempts if mode == 'verified' else 0)):
+    for attempt in range(_start_attempt, 1 + (attempts if mode == 'verified' else 0)):
         requested_ids = {q['id'] for q in pending}
         request_messages = messages(mode, documents, pending, read_errors, correction)
         started = time.monotonic()
@@ -86,6 +91,22 @@ def process_questions(client, mode, package, questions, documents, read_errors, 
         except ApiError as exc:
             reason = str(exc)
             trace({'package': package, 'attempt': attempt, 'event': 'api_error', 'error': reason})
+            if isinstance(exc, ResponseTruncated) and len(pending) > 1:
+                middle = len(pending) // 2
+                say('Ответ обрезан по лимиту токенов. Делим %s вопросов на группы %s и %s; итоговая выгрузка остаётся общей.' %
+                    (len(pending), middle, len(pending) - middle))
+                trace({'package': package, 'attempt': attempt, 'event': 'batch_split',
+                       'question_ids': [q['id'] for q in pending], 'sizes': [middle, len(pending) - middle]})
+                for number, subset in enumerate((pending[:middle], pending[middle:]), 1):
+                    ids = {q['id'] for q in subset}
+                    subset_correction = [item for item in correction or [] if item['id'] in ids] or None
+                    # Не теряем принятые ответы и не обнуляем бюджет исправлений.
+                    accepted.update(process_questions(client, mode, package, subset, documents, read_errors,
+                        attempts, trace, log, _start_attempt=attempt, _correction=subset_correction,
+                        _batch=_batch + '.' + str(number)))
+                return accepted
+            if isinstance(exc, ResponseTruncated):
+                say('Обрезан ответ даже на один вопрос: дальнейшее деление невозможно, фиксируем технический отказ.')
             say('API не дал пригодного ответа: %s. Ожидающим вопросам назначаем «не знаю» с технической причиной.' % reason)
             for q in pending:
                 accepted[q['id']] = {**abstain(q, reason), 'error_type': 'api'}

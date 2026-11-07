@@ -23,7 +23,7 @@ import answers as answer_format
 import reference_data
 import run_storage
 import settings
-from client import ApiError
+from client import ApiError, ResponseTruncated
 
 
 class FakeClient:
@@ -85,7 +85,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(arguments.arguments['mode'], 'verified')
         self.assertFalse(arguments.arguments['evaluate'])
         defaults = settings.QueryOptions(atacment=['contract.txt'], promt=['Срок?'])
-        self.assertEqual((defaults.repair_attempts, defaults.max_tokens, defaults.timeout), (2, 16384, 900))
+        self.assertEqual((defaults.repair_attempts, defaults.max_tokens, defaults.timeout), (2, 32768, 900))
         _, arguments, _ = cli_commands.app.parse_args(
             ['evaluate', '--run', 'runs/example'], exit_on_error=False, print_error=False)
         self.assertEqual(Path(arguments.arguments['run']), Path('runs/example'))
@@ -236,6 +236,54 @@ class CliTests(unittest.TestCase):
         self.assertTrue(all(answer['status'] == 'не знаю' for answer in answers.values()))
         self.assertTrue(all(answer['error_type'] == 'api' for answer in answers.values()))
         self.assertTrue(any(event.get('event') == 'api_error' for event in self.events))
+
+    def test_truncation_splits_questions_in_both_modes_and_keeps_documents(self):
+        for mode in ('baseline', 'verified'):
+            with self.subTest(mode=mode):
+                self.events.clear()
+                client = FakeClient(ResponseTruncated('limit'), self.response(self.answer()),
+                                    self.response(self.answer('P01-02')))
+                answers = self.process(client, mode=mode)
+                self.assertEqual(set(answers), {'P01-01', 'P01-02'})
+                self.assertTrue(all(a['status'] == 'ответ' for a in answers.values()))
+                payloads = [json.loads(call[1]['content']) for call in client.calls]
+                self.assertEqual([[q['id'] for q in p['questions']] for p in payloads],
+                                 [['P01-01', 'P01-02'], ['P01-01'], ['P01-02']])
+                for payload in payloads[1:]:
+                    self.assertEqual(payload['documents'], payloads[0]['documents'])
+                self.assertEqual(len([e for e in self.events if e.get('event') == 'batch_split']), 1)
+                self.assertEqual({e['batch'] for e in self.events}, {'root', 'root.1', 'root.2'})
+
+    def test_split_during_repair_preserves_answers_and_remaining_budget(self):
+        # Деление на последнем исправлении не разрешает дополнительные исправления.
+        questions = self.questions + [{'id': 'P01-03', 'package': 'P01', 'question': 'Срок?'}]
+        client = FakeClient(self.response(self.answer()), ResponseTruncated('limit'),
+                            self.response(self.answer('P01-02', '75 дней')),
+                            self.response(self.answer('P01-03')))
+        answers = self.process(client, questions=questions, attempts=1)
+        self.assertEqual(len(client.calls), 4)
+        self.assertEqual(answers['P01-01']['status'], 'ответ')
+        self.assertEqual(answers['P01-02']['status'], 'не знаю')
+        self.assertEqual(answers['P01-03']['status'], 'ответ')
+        for call, question_id in zip(client.calls[2:], ['P01-02', 'P01-03']):
+            payload = json.loads(call[1]['content'])
+            self.assertEqual([q['id'] for q in payload['questions']], [question_id])
+            self.assertEqual([q['id'] for q in payload['previous_answers_and_validation_errors']], [question_id])
+        self.assertTrue(all(e['attempt'] <= 1 for e in self.events if 'attempt' in e))
+
+    def test_recursive_split_stops_at_singleton_and_preserves_other_results(self):
+        questions = self.questions + [{'id': 'P01-03', 'package': 'P01', 'question': 'Срок?'}]
+        client = FakeClient(ResponseTruncated('limit'), self.response(self.answer()),
+                            ResponseTruncated('limit'), ResponseTruncated('single limit'),
+                            self.response(self.answer('P01-03')))
+        answers = self.process(client, questions=questions)
+        self.assertEqual(len(client.calls), 5)
+        self.assertEqual(set(answers), {q['id'] for q in questions})
+        self.assertEqual(answers['P01-01']['status'], 'ответ')
+        self.assertEqual(answers['P01-02']['error_type'], 'api')
+        self.assertEqual(answers['P01-02']['reason'], 'single limit')
+        self.assertEqual(answers['P01-03']['status'], 'ответ')
+        self.assertEqual(len([e for e in self.events if e.get('event') == 'batch_split']), 2)
 
     def test_evidence_failure_is_cautious_result_not_technical_failure(self):
         client = FakeClient(self.response(self.answer(value='75 дней')))

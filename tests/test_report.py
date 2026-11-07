@@ -127,6 +127,19 @@ class ReportTests(unittest.TestCase):
             evaluation.compare_runs(before, self.run, output)
         return before, output
 
+    def test_repair_counts_separate_batches_but_not_http_retries(self):
+        events = [
+            {'package': 'P01', 'attempt': 1, 'event': 'api_request'},
+            {'package': 'P01', 'attempt': 1, 'event': 'api_error'},
+            {'package': 'P01', 'batch': 'root.1', 'attempt': 1, 'event': 'api_request'},
+            {'package': 'P01', 'batch': 'root.1', 'attempt': 1, 'event': 'api_request'},
+            {'package': 'P01', 'batch': 'root.2', 'attempt': 1, 'response': '{}'},
+            {'package': 'P01', 'batch': 'root.2', 'attempt': 0, 'event': 'api_request'},
+        ]
+        (self.run / 'trace.jsonl').write_text('\n'.join(json.dumps(e) for e in events), encoding='utf-8')
+        operations = report.build_run_model(self.run)['runs'][0]['operations']
+        self.assertEqual(operations['repair_requests'], 3)
+
     def test_no_evaluation_does_not_invent_quality(self):
         model = report.build_run_model(self.run)
         run = model['runs'][0]

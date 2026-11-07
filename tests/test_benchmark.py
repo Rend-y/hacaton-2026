@@ -12,16 +12,17 @@ from unittest.mock import patch
 import cli
 import pipeline
 import settings
-from client import ApiError
+from client import ApiError, ResponseTruncated
 from report import build_run_model
 
 
 class BenchmarkTests(unittest.TestCase):
-    def exercise(self, failure=False):
+    def exercise(self, failure=False, truncated=False):
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as temporary:
             root = Path(temporary)
             shutil.copytree(settings.ROOT / 'data' / 'public', root / 'data' / 'public')
             calls = []
+            expected_calls = 8 if truncated else 6
             owner = self
 
             class OfflineClient:
@@ -41,6 +42,8 @@ class BenchmarkTests(unittest.TestCase):
                     owner.assertEqual({d['text'] for d in payload['documents']}, expected)
                     calls.append(payload)
                     self.stats['requests'] += 1
+                    if truncated and len(calls) == 1:
+                        raise ResponseTruncated('output limit')
                     if failure and len(calls) == 1:
                         raise ApiError('Model API HTTP 429')
                     answers = [{'id': q['id'], 'status': 'не знаю', 'answer': '', 'evidence': []}
@@ -51,7 +54,7 @@ class BenchmarkTests(unittest.TestCase):
 
             def guard(path, *args, **kwargs):
                 if path.name == 'answers_public.json':
-                    owner.assertEqual(len(calls), 6, 'Эталон открыт до окончания генерации')
+                    owner.assertEqual(len(calls), expected_calls, 'Эталон открыт до окончания генерации')
                 return original_open(path, *args, **kwargs)
 
             with patch.object(settings, 'ROOT', root), patch.object(pipeline, 'Client', return_value=OfflineClient()), \
@@ -68,7 +71,8 @@ class BenchmarkTests(unittest.TestCase):
             model = build_run_model(output)['runs'][0]
             self.assertEqual(model['quality']['n'], 71)
             self.assertEqual(len(model['answers']), 71)
-            self.assertEqual(model['operations']['requests'], 6)
+            self.assertEqual(model['operations']['requests'], expected_calls)
+            self.assertEqual(model['config']['max_tokens'], 32768)
             self.assertEqual(model['config']['timeout_seconds'], 900)
             self.assertEqual(code, 2 if failure else 0)
             self.assertEqual(model['status'], 'completed_with_errors' if failure else 'completed')
@@ -80,3 +84,6 @@ class BenchmarkTests(unittest.TestCase):
 
     def test_failure_does_not_drop_other_groups_or_hide_errors(self):
         self.exercise(failure=True)
+
+    def test_truncation_recovers_into_one_report_with_all_questions(self):
+        self.exercise(truncated=True)

@@ -17,7 +17,7 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from client import ApiError, Client, NoRedirect, RateLimiter, load_env
+from client import ApiError, Client, NoRedirect, RateLimiter, ResponseTruncated, load_env
 
 
 class FakeOpener:
@@ -119,7 +119,7 @@ class ClientTests(unittest.TestCase):
 
     def test_truncated_response_is_rejected_without_http_retry(self):
         client = self.make_client(self.completion('partial', finish='length'))
-        with self.assertRaisesRegex(ApiError, 'truncated'):
+        with self.assertRaisesRegex(ResponseTruncated, 'truncated'):
             client.complete(self.MESSAGES)
         self.assertEqual(len(client.opener.calls), 1)
         self.assertEqual(client.stats['http_retries'], 0)

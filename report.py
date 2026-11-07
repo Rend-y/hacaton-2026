@@ -178,7 +178,7 @@ def build_run_model(run_dir: Path) -> dict:
                            'after': final_answers.get(event.get('id'), {})})
     # Одна итерация исправления может содержать несколько HTTP-повторов. Считаем
     # её один раз, включая неуспешные обращения; старые журналы содержат response.
-    repair_requests = len({(e.get('package'), e.get('attempt')) for e in trace
+    repair_requests = len({(e.get('package'), e.get('batch', 'root'), e.get('attempt')) for e in trace
                            if isinstance(e.get('attempt'), int) and e['attempt'] > 0
                            and (e.get('event') in ('api_request', 'api_error') or 'response' in e)})
     stats = manifest.get('stats') if isinstance(manifest.get('stats'), dict) else {}
