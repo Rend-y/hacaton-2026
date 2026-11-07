@@ -3,7 +3,7 @@
 
 Этот модуль читает входы, распределяет закупки между рабочими потоками,
 вызывает модель и проверки, сохраняет результаты. Эталоны подключаются
-только отдельной командой оценки. Требуется Python 3.10+, без внешних пакетов.
+только на отдельном этапе оценки. Требуется Python 3.10+; для PDF в query нужен pypdf.
 """
 import argparse
 import concurrent.futures
@@ -309,11 +309,15 @@ def process_package(client, mode, package, questions, documents, read_errors, at
     return accepted
 
 
-def run(args):
+def run(args, prepared=None):
     """Организует запуск, снимок входов, частичные результаты и итоговый статус."""
     load_env(ROOT / '.env')
-    data = Path(args.data).resolve()
-    if args.command == 'ask':
+    # Обычный run читает датасет организатора. query передаёт уже прочитанные
+    # документы из произвольных путей в тот же конвейер проверок и сохранения.
+    data = Path(args.data).resolve() if prepared is None else None
+    if prepared is not None:
+        questions = prepared['questions']
+    elif args.command == 'ask':
         questions = [{'id': args.package + '-custom', 'package': args.package, 'question': args.question}]
     else:
         questions = read_questions(data)
@@ -326,9 +330,13 @@ def run(args):
     grouped = {}
     for question in questions:
         grouped.setdefault(question['package'], []).append(question)
-    package_data = {name: read_package(data, name) for name in grouped}
+    package_data = (prepared['package_data'] if prepared is not None
+                    else {name: read_package(data, name) for name in grouped})
     input_data = {'questions': questions, 'packages': package_data}
     fingerprint = hashlib.sha256(json.dumps(input_data, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    if prepared is not None:
+        # Пути помогают найти оригиналы, но не влияют на отпечаток их содержимого.
+        input_data['source_metadata'] = prepared.get('source_metadata', {})
     output = Path(args.output or ROOT / 'runs' / (datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + args.mode)).resolve()
     if output.exists() and any(output.iterdir()):
         raise ValueError('Output directory is not empty; choose a new --output to preserve prior runs')
@@ -383,6 +391,16 @@ def run(args):
     manifest.update(status='completed_with_errors' if failures else 'completed',
                     elapsed_seconds=round(time.monotonic() - started, 3), stats=dict(client.stats))
     write_json(output / 'manifest.json', manifest)
+    # Отчёт о работе доступен без эталонов. Оценка качества включается явно и только
+    # после завершения генерации: правильные ответы никогда не попадают к модели.
+    from report import write_run_report
+    report_path = write_run_report(output)
+    if getattr(args, 'evaluate', False) and data is not None:
+        from evaluation import evaluate_run
+        progress('Генерация завершена. Отдельно запускаем официальный оценщик по эталонам.')
+        evaluate_run(output, data)
+        report_path = write_run_report(output)
+    progress('HTML-отчёт: ' + str(report_path))
     progress('Готово. CSV: ' + str(output / 'answers.csv'))
     progress('Запросов к API: %s; время: %.1f с; технически не обработано вопросов: %s. manifest.json и trace.jsonl сохранены.' %
              (client.stats['requests'], manifest['elapsed_seconds'], len(failures)))
@@ -393,7 +411,7 @@ def run(args):
 
 def parser():
     """Описывает команды и допустимые параметры, показываемые через --help."""
-    main = argparse.ArgumentParser(description='ИИ-помощник по закупкам: ответы, проверки и сравнение. Python 3.10+, без зависимостей.')
+    main = argparse.ArgumentParser(description='ИИ-помощник по закупкам: файлы, вопросы, проверки и сравнение. Python 3.10+; для PDF нужен pypdf.')
     commands = main.add_subparsers(dest='command', required=True)
     for command in ('run', 'ask'):
         sub = commands.add_parser(command, help='Обработать questions.csv' if command == 'run' else 'Задать свой вопрос')
@@ -409,6 +427,7 @@ def parser():
             sub.add_argument('--question', required=True)
         else:
             sub.add_argument('--packages', help='Необязательный фильтр, например P01,P04')
+            sub.add_argument('--evaluate', action='store_true', help='После генерации оценить по answers_public.json и добавить метрики в HTML')
     evaluate = commands.add_parser('evaluate', help='Запустить официальный оценщик отдельно от модели')
     evaluate.add_argument('--run', required=True)
     evaluate.add_argument('--data', default=str(ROOT / 'data' / 'public'))
@@ -416,6 +435,17 @@ def parser():
     compare.add_argument('--baseline', required=True)
     compare.add_argument('--verified', required=True)
     compare.add_argument('--output', required=True)
+    report = commands.add_parser('report', help='Пересобрать HTML из существующего запуска или сравнения, без вызова API')
+    source = report.add_mutually_exclusive_group(required=True)
+    source.add_argument('--run', help='Папка запуска с answers.csv и manifest.json')
+    source.add_argument('--comparison', help='Папка с comparison.json')
+    query = commands.add_parser('query', help='Вопросы к произвольным файлам или папкам, без структуры датасета')
+    query.add_argument('--atacment', required=True, nargs='+', help='Путь к файлу или папке с документами; можно указать несколько путей')
+    query.add_argument('--promt', required=True, nargs='+', help='Вопрос в кавычках, несколько вопросов или путь к файлу вопросов TXT/MD/CSV/JSON')
+    query.add_argument('--mode', choices=['baseline', 'verified'], default='verified')
+    # Простая команда показывает только два входа и режим. Настройки конвейера
+    # остаются фиксированными; подробные параметры доступны у команды run.
+    query.set_defaults(workers=1, repair_attempts=2, max_tokens=16384, timeout=300)
     return main
 
 
@@ -426,14 +456,24 @@ def main(argv=None):
         sys.stderr.reconfigure(encoding='utf-8')
     args = parser().parse_args(argv)
     try:
+        if args.command == 'query':
+            from query import run_query
+            return run_query(args)
         if args.command in ('run', 'ask'):
             return run(args)
+        from report import write_run_report, write_comparison_report
+        if args.command == 'report':
+            path = write_run_report(Path(args.run)) if args.run else write_comparison_report(Path(args.comparison))
+            emit('HTML-отчёт: ' + str(path))
+            return 0
         from evaluation import evaluate_run, compare_runs
         if args.command == 'evaluate':
             evaluate_run(Path(args.run).resolve(), Path(args.data).resolve())
+            emit('HTML-отчёт: ' + str(write_run_report(Path(args.run))))
         else:
             report = compare_runs(Path(args.baseline).resolve(), Path(args.verified).resolve(), Path(args.output).resolve())
             emit(json.dumps(report, ensure_ascii=False, indent=2))
+            emit('HTML-отчёт: ' + str(write_comparison_report(Path(args.output))))
         return 0
     except (ValueError, OSError, ApiError) as exc:
         print('ERROR: ' + str(exc), file=sys.stderr)

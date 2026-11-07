@@ -101,6 +101,7 @@ def evaluate_run(run_dir: Path, data_dir: Path) -> dict:
         raise ValueError(f'Каталог документов не найден: {packages}')
     try:
         evaluation_fingerprint = _evaluation_fingerprint(data_dir)
+        answers_digest = hashlib.sha256(answers.read_bytes()).hexdigest()
     except OSError as exc:
         raise ValueError('Не удалось зафиксировать содержимое набора для оценки') from exc
 
@@ -146,7 +147,10 @@ def evaluate_run(run_dir: Path, data_dir: Path) -> dict:
     for category in sorted({row['type'] for row in rows}):
         by_type[category] = _metrics_for_rows([row for row in rows if row['type'] == category])
     evaluation = {**metrics, 'by_type': by_type, 'scope': 'all_questions_in_gold',
-                  'evaluation_fingerprint': evaluation_fingerprint}
+                  'evaluation_fingerprint': evaluation_fingerprint,
+                  'answers_sha256': answers_digest}
+    if hashlib.sha256(answers.read_bytes()).hexdigest() != answers_digest:
+        raise ValueError('Ответы изменились во время оценки; повторите evaluate после завершения запуска')
     try:
         _write_json(run_dir / 'evaluation.json', evaluation)
     except OSError as exc:
@@ -197,13 +201,13 @@ def _deltas(before, after):
     return {key: round(after[key] - before[key], 3) for key in before.keys() & after.keys()}
 
 
-def compare_runs(baseline: Path, verified: Path, output: Path) -> dict:
+def comparison_data(baseline: Path, verified: Path) -> dict:
     """Сравнивает исходный и проверяемый режимы при одинаковых модели и входных данных.
 
     Отличаться должна обработка ответа, а не набор вопросов, модель или её бюджет.
     Проверки метаданных предотвращают ошибочный вывод об улучшении качества.
     """
-    baseline, verified, output = Path(baseline).resolve(), Path(verified).resolve(), Path(output).resolve()
+    baseline, verified = Path(baseline).resolve(), Path(verified).resolve()
     before_manifest = _read_json(baseline / 'manifest.json')
     after_manifest = _read_json(verified / 'manifest.json')
     _validate_manifest(before_manifest, 'baseline', baseline)
@@ -220,6 +224,10 @@ def compare_runs(baseline: Path, verified: Path, output: Path) -> dict:
 
     before_eval = _read_json(baseline / 'evaluation.json')
     after_eval = _read_json(verified / 'evaluation.json')
+    for directory, assessed in ((baseline, before_eval), (verified, after_eval)):
+        if assessed.get('answers_sha256'):
+            if hashlib.sha256((directory / 'answers.csv').read_bytes()).hexdigest() != assessed['answers_sha256']:
+                raise ValueError('Ответы изменились после оценки; повторите evaluate перед сравнением')
     # Одинаковые входы генератора ещё не гарантируют одинаковые эталоны при последующей оценке.
     if before_eval.get('evaluation_fingerprint') != after_eval.get('evaluation_fingerprint'):
         raise ValueError('Нельзя сравнить запуски: различается набор оценки или версия оценщика')
@@ -250,6 +258,15 @@ def compare_runs(baseline: Path, verified: Path, output: Path) -> dict:
         'baseline_dir': str(baseline), 'verified_dir': str(verified),
         'baseline': before, 'verified': after, 'delta': _deltas(before, after), 'by_type': by_type,
     }
+    return comparison
+
+
+def compare_runs(baseline: Path, verified: Path, output: Path) -> dict:
+    """Проверяет сопоставимость и сохраняет одно и то же сравнение в JSON и CSV."""
+    comparison = comparison_data(baseline, verified)
+    before, after = comparison['baseline'], comparison['verified']
+    by_type = comparison['by_type']
+    output = Path(output).resolve()
     try:
         output.mkdir(parents=True, exist_ok=True)
         _write_json(output / 'comparison.json', comparison)
