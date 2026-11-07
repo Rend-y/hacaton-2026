@@ -17,7 +17,7 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import cli
+import answer_engine
 from client import ApiError, Client
 from progress import RunLog, heartbeat
 
@@ -130,7 +130,7 @@ class WorkflowLogTests(unittest.TestCase):
         self.traces = []
 
     def process(self, client, mode='verified', attempts=1):
-        return cli.process_package(client, mode, 'P02', self.questions, self.documents, [],
+        return answer_engine.process_questions(client, mode, 'P02', self.questions, self.documents, [],
                                    attempts, self.traces.append, progress=self.logs.append)
 
     def answer(self, quote=None):

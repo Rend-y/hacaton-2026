@@ -1,15 +1,17 @@
-"""Вопросы к произвольным локальным документам через существующий конвейер CLI.
+"""Сценарий вопросов к файлу, нескольким файлам или произвольной директории.
 
 Здесь нет собственной модели или оценщика: модуль подготавливает входы, организует
-ввод вопросов и передаёт их обычному run с теми же проверками и HTML-отчётом.
+ввод вопросов и передаёт готовые тексты конвейеру проверки и сохранения результатов.
 """
-from argparse import Namespace
 from datetime import datetime
 import json
 from pathlib import Path
 import re
 
-import cli
+import pipeline
+import settings
+from progress import emit
+from settings import QueryOptions, RunOptions
 from input_loader import MAX_QUESTIONS, MAX_QUESTION_CHARS, load_documents, load_questions
 from prompts import messages
 
@@ -17,18 +19,18 @@ from prompts import messages
 def _show_inputs(loaded):
     """До обращения к модели показывает пользователю фактический состав контекста."""
     documents = loaded['documents']
-    cli.emit('Загружено документов: %s; символов: %s.' % (len(documents), sum(map(len, documents.values()))))
+    emit('Загружено документов: %s; символов: %s.' % (len(documents), sum(map(len, documents.values()))))
     for name, text in documents.items():
-        cli.emit('  + %s (%s символов)' % (name, len(text)))
+        emit('  + %s (%s символов)' % (name, len(text)))
     for item in loaded['skipped']:
-        cli.emit('  Пропущен: %s — %s' % (item['path'], item['reason']))
+        emit('  Пропущен: %s — %s' % (item['path'], item['reason']))
     for error in loaded['read_errors']:
-        cli.emit('  Проблема чтения: ' + error)
-    cli.emit('Вопросы относятся ко всем загруженным документам вместе.')
+        emit('  Проблема чтения: ' + error)
+    emit('Вопросы относятся ко всем загруженным документам вместе.')
 
 
 def _questions(values):
-    """Проверяет ввод до API, сохраняя порядок и формируя устойчивые ID внутри пакета."""
+    """Проверяет ввод до API, сохраняя порядок и формируя устойчивые ID внутри запуска."""
     if not values or len(values) > MAX_QUESTIONS:
         raise ValueError('Укажите от 1 до %s вопросов за один запуск.' % MAX_QUESTIONS)
     result = []
@@ -44,7 +46,7 @@ def _questions(values):
 def _output_path():
     """Результаты получают новую папку автоматически, без дополнительных параметров."""
     name = datetime.now().strftime('%Y%m%d-%H%M%S-%f') + '-query'
-    return cli.ROOT / 'runs' / name
+    return settings.ROOT / 'runs' / name
 
 
 def _run_batch(args, loaded, values):
@@ -53,8 +55,8 @@ def _run_batch(args, loaded, values):
         from query_evaluation import plan_query_evaluation
         # До API проверяются только формулировки вопросов и исходные документы.
         # Правильные ответы читаются отдельным этапом после завершения генерации.
-        plan = plan_query_evaluation(rows, loaded['documents'], loaded['read_errors'], cli.ROOT / 'data' / 'public')
-        cli.emit('Для оценки сопоставлено вопросов: %s; пакет: %s. Эталоны ответов ещё не загружались.' %
+        plan = plan_query_evaluation(rows, loaded['documents'], loaded['read_errors'], settings.ROOT / 'data' / 'public')
+        emit('Для оценки сопоставлено вопросов: %s; пакет: %s. Эталоны ответов ещё не загружались.' %
                  (len(plan['matches']), plan['package']))
     # Используем ту же консервативную оценку контекста, что и API-клиент. Большой
     # набор отклоняется до запроса, а не урезается скрытно до удобного размера.
@@ -63,30 +65,31 @@ def _run_batch(args, loaded, values):
     if estimate > 128000:
         raise ValueError('Набор слишком большой для текущего полного контекста 128k. Выберите меньше документов или вопросов; файлы автоматически не обрезаются.')
     output = _output_path()
-    options = Namespace(**{**vars(args), 'output': str(output), 'evaluate': False})
-    prepared = {'questions': rows, 'package_data': {'INPUT': (loaded['documents'], loaded['read_errors'])},
+    options = RunOptions(mode=args.mode, output=output, repair_attempts=args.repair_attempts,
+                         max_tokens=args.max_tokens, timeout=args.timeout)
+    prepared = {'questions': rows, 'documents': loaded['documents'], 'read_errors': loaded['read_errors'],
                 'source_metadata': {'sources': loaded['sources'], 'skipped': loaded['skipped']}}
-    code = cli.run(options, prepared=prepared)
+    code = pipeline.run(options, prepared=prepared)
     if getattr(args, 'evaluate', False):
         from query_evaluation import evaluate_query_run
         from report import write_run_report
-        cli.emit('Генерация завершена. Оцениваем только заданные вопросы по публичным эталонам.')
-        evaluate_query_run(output, cli.ROOT / 'data' / 'public')
+        emit('Генерация завершена. Оцениваем только заданные вопросы по публичным эталонам.')
+        evaluate_query_run(output, settings.ROOT / 'data' / 'public')
         write_run_report(output)
     answers = json.loads((output / 'answers.json').read_text(encoding='utf-8'))
     questions = {row['id']: row['question'] for row in rows}
-    cli.emit('\nОтветы по документам:')
+    emit('\nОтветы по документам:')
     for answer in answers:
-        cli.emit('\n%s. %s' % (answer['id'], questions[answer['id']]))
-        cli.emit('Статус: ' + answer.get('status', 'не указан'))
+        emit('\n%s. %s' % (answer['id'], questions[answer['id']]))
+        emit('Статус: ' + answer.get('status', 'не указан'))
         if answer.get('answer'):
-            cli.emit('Ответ: ' + answer['answer'])
+            emit('Ответ: ' + answer['answer'])
         if answer.get('reason'):
-            cli.emit('Основание: ' + answer['reason'])
+            emit('Основание: ' + answer['reason'])
         for evidence in answer.get('evidence') or []:
             if isinstance(evidence, dict):
-                cli.emit('Источник: %s\n  %s' % (evidence.get('file', ''), evidence.get('quote', '')))
-    cli.emit('\nОтчёт: ' + str(output / 'report.html'))
+                emit('Источник: %s\n  %s' % (evidence.get('file', ''), evidence.get('quote', '')))
+    emit('\nОтчёт: ' + str(output / 'report.html'))
     return code
 
 
@@ -120,7 +123,7 @@ def _question_inputs(values):
     return questions, files
 
 
-def run_query(args):
+def run_query(args: QueryOptions) -> int:
     """Два входа: документы и вопросы. Режим выбирает способ проверки ответов."""
     values, question_files = _question_inputs(args.promt)
     # Файлы с вопросами не входят в доказательства ответа. Старые результаты

@@ -17,6 +17,12 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import cli
+import cli_commands
+import answer_engine
+import answers as answer_format
+import reference_data
+import run_storage
+import settings
 from client import ApiError
 
 
@@ -52,7 +58,7 @@ class CliTests(unittest.TestCase):
             {'id': 'P01-02', 'package': 'P01', 'question': 'За сколько дней выполняются работы?'},
         ]
         self.events = []
-        self.emit_patch = patch.object(cli, 'emit')
+        self.emit_patch = patch.object(answer_engine, 'emit')
         self.emit_patch.start()
         self.addCleanup(self.emit_patch.stop)
 
@@ -64,7 +70,7 @@ class CliTests(unittest.TestCase):
         return json.dumps({'answers': list(answers)}, ensure_ascii=False)
 
     def process(self, client, *, mode='verified', questions=None, attempts=2, documents=None, read_errors=None):
-        return cli.process_package(client, mode, 'P01', questions or self.questions,
+        return answer_engine.process_questions(client, mode, 'P01', questions or self.questions,
                                    self.documents if documents is None else documents,
                                    read_errors or [], attempts, self.events.append)
 
@@ -72,53 +78,57 @@ class CliTests(unittest.TestCase):
         (self.root / 'questions.csv').write_text(text, encoding=encoding)
 
     def test_parser_commands_and_defaults(self):
-        args = cli.parser().parse_args(['run'])
-        self.assertEqual(args.mode, 'verified')
-        self.assertEqual(args.workers, 1)
-        self.assertEqual(args.repair_attempts, 2)
-        args = cli.parser().parse_args(['ask', '--package', 'P01', '--question', 'Срок?', '--mode', 'baseline'])
-        self.assertEqual((args.command, args.package, args.question, args.mode), ('ask', 'P01', 'Срок?', 'baseline'))
-        args = cli.parser().parse_args(['evaluate', '--run', 'runs/example'])
-        self.assertEqual(args.run, 'runs/example')
+        _, arguments, _ = cli_commands.app.parse_args(
+            ['query', '--atacment', 'contract.txt', '--promt', 'Срок?'],
+            exit_on_error=False, print_error=False)
+        arguments.apply_defaults()
+        self.assertEqual(arguments.arguments['mode'], 'verified')
+        self.assertFalse(arguments.arguments['evaluate'])
+        defaults = settings.QueryOptions(atacment=['contract.txt'], promt=['Срок?'])
+        self.assertEqual((defaults.repair_attempts, defaults.max_tokens, defaults.timeout), (2, 16384, 300))
+        _, arguments, _ = cli_commands.app.parse_args(
+            ['evaluate', '--run', 'runs/example'], exit_on_error=False, print_error=False)
+        self.assertEqual(Path(arguments.arguments['run']), Path('runs/example'))
 
-    def test_parser_requires_ask_arguments_and_valid_mode(self):
-        for argv in ([], ['ask'], ['run', '--mode', 'unknown']):
-            with self.subTest(argv=argv), redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-                cli.parser().parse_args(argv)
+    def test_parser_requires_query_arguments_and_valid_mode(self):
+        for argv in (['query'], ['query', '--atacment', 'contract.txt'],
+                     ['query', '--atacment', 'contract.txt', '--promt', 'Срок?', '--mode', 'unknown']):
+            with self.subTest(argv=argv), redirect_stderr(io.StringIO()):
+                self.assertEqual(cli.main(argv), 2)
 
     def test_questions_semicolon_bom_and_quoted_delimiter(self):
         self.write_questions('id;package;question\nP01-01;P01;"Какая сумма; в рублях?"\n', encoding='utf-8-sig')
-        self.assertEqual(cli.read_questions(self.root), [
+        self.assertEqual(reference_data.read_questions(self.root), [
             {'id': 'P01-01', 'package': 'P01', 'question': 'Какая сумма; в рублях?'}])
 
     def test_questions_comma_delimiter_cp1251(self):
         self.write_questions('id,package,question\nP01-01,P01,"Сумма, рубли?"\n', encoding='cp1251')
-        self.assertEqual(cli.read_questions(self.root)[0]['question'], 'Сумма, рубли?')
+        self.assertEqual(reference_data.read_questions(self.root)[0]['question'], 'Сумма, рубли?')
 
     def test_questions_multiline_csv_preserves_word_boundary(self):
         self.write_questions('id;package;question\nP01-01;P01;"Какой срок\nв календарных днях?"\n')
-        self.assertEqual(cli.read_questions(self.root)[0]['question'].replace('\r\n', '\n'), 'Какой срок\nв календарных днях?')
+        self.assertEqual(reference_data.read_questions(self.root)[0]['question'].replace('\r\n', '\n'), 'Какой срок\nв календарных днях?')
 
     def test_duplicate_question_ids_rejected(self):
         self.write_questions('id;package;question\nP01-01;P01;Первый?\nP01-01;P02;Другой?\n')
         with self.assertRaisesRegex(ValueError, 'Duplicate question ID'):
-            cli.read_questions(self.root)
+            reference_data.read_questions(self.root)
 
     def test_unsafe_package_names_rejected_by_both_readers(self):
         for package in ('../P02', '..', 'P01/../../secret', 'P01\\..\\P02', 'C:\\data', '/etc', ''):
             with self.subTest(package=package):
                 self.write_questions(f'id;package;question\nP01-01;{package};Вопрос?\n')
                 with self.assertRaises(ValueError):
-                    cli.read_questions(self.root)
+                    reference_data.read_questions(self.root)
                 with self.assertRaises(ValueError):
-                    cli.read_package(self.root, package)
+                    reference_data.read_package(self.root, package)
 
     def test_missing_columns_and_no_questions_rejected(self):
         for content in ('', 'id;question\n1;Что?\n', 'id;package;question\n', 'id;package;question\n1;P01;\n'):
             with self.subTest(content=content):
                 self.write_questions(content)
                 with self.assertRaises(ValueError):
-                    cli.read_questions(self.root)
+                    reference_data.read_questions(self.root)
 
     def test_read_package_reports_bad_files_and_keeps_good_ones(self):
         package = self.root / 'packages' / 'P01'
@@ -126,30 +136,30 @@ class CliTests(unittest.TestCase):
         (package / 'good.txt').write_text(self.quote, encoding='utf-8')
         (package / 'empty.txt').write_text('', encoding='utf-8')
         (package / 'binary.txt').write_bytes(b'\x00\x01\x02')
-        documents, errors = cli.read_package(self.root, 'P01')
+        documents, errors = reference_data.read_package(self.root, 'P01')
         self.assertEqual(documents, {'good.txt': self.quote})
         self.assertEqual(len(errors), 2)
         self.assertTrue(any('empty.txt' in error for error in errors))
         self.assertTrue(any('binary.txt' in error for error in errors))
-        self.assertEqual(cli.read_package(self.root, 'MISSING'), ({}, ['Package directory is missing']))
+        self.assertEqual(reference_data.read_package(self.root, 'MISSING'), ({}, ['Package directory is missing']))
 
     def test_parse_answers_accepts_json_fence_and_reasoning_wrapper(self):
         response = '<think>Unneeded internal text</think>\n```json\n' + self.response(self.answer()) + '\n```'
-        self.assertEqual(cli.parse_answers(response), {'P01-01': self.answer()})
-        self.assertEqual(cli.parse_answers(json.dumps([self.answer()])), {'P01-01': self.answer()})
+        self.assertEqual(answer_format.parse_answers(response), {'P01-01': self.answer()})
+        self.assertEqual(answer_format.parse_answers(json.dumps([self.answer()])), {'P01-01': self.answer()})
 
     def test_parse_answers_rejects_duplicate_ids_and_bad_shape(self):
         for response in (self.response(self.answer(), self.answer()), '{"answers":{}}', '{"answers":[{}]}', 'not json'):
             with self.subTest(response=response), self.assertRaises(ValueError):
-                cli.parse_answers(response)
+                answer_format.parse_answers(response)
 
     def test_csv_export_preserves_quotes_semicolons_and_input_order(self):
         self.quote = 'Срок: 60 дней; значение "уточнено".\nВторая строка.'
         answers = {'P01-02': self.answer('P01-02'), 'P01-01': self.answer('P01-01')}
-        cli.save_answers(self.root, self.questions, answers)
+        run_storage.save_answers(self.root, self.questions, answers)
         with (self.root / 'answers.csv').open(encoding='utf-8', newline='') as stream:
             reader = csv.DictReader(stream, delimiter=';')
-            self.assertEqual(reader.fieldnames, cli.FIELDS)
+            self.assertEqual(reader.fieldnames, answer_format.FIELDS)
             rows = list(reader)
         self.assertEqual([row['id'] for row in rows], ['P01-01', 'P01-02'])
         self.assertEqual(rows[0]['quote'], 'Срок: 60 дней; значение "уточнено". Вторая строка.')
@@ -160,25 +170,25 @@ class CliTests(unittest.TestCase):
         for status in ('не знаю', 'нет в документах'):
             answer = self.answer()
             answer['status'] = status
-            row = cli.csv_row(answer)
+            row = answer_format.csv_row(answer)
             self.assertEqual((row['answer'], row['quote'], row['file']), ('', '', ''))
 
     def test_percent_is_recomputed_by_code_without_mutating_input(self):
         answer = self.answer(value='Неверная арифметика модели')
         answer['calculation'] = {'operation': 'percent', 'base': '1800000', 'rate': '5', 'base_evidence': 0, 'rate_evidence': 1}
-        result = cli.calculate(answer)
+        result = answer_format.calculate(answer)
         self.assertEqual(result['answer'], '90000.00 руб.')
         self.assertEqual(answer['answer'], 'Неверная арифметика модели')
         answer['calculation'].update(base='10.10', rate='5')
-        self.assertEqual(cli.calculate(answer)['answer'], '0.51 руб.')
+        self.assertEqual(answer_format.calculate(answer)['answer'], '0.51 руб.')
 
     def test_unsupported_calculation_not_executed(self):
         for base in ('NaN', 'Infinity', '-10', '1e100', '__import__("os")'):
             answer = self.answer()
             answer['calculation'] = {'operation': 'percent', 'base': base, 'rate': '5'}
-            self.assertIs(cli.calculate(answer), answer)
+            self.assertIs(answer_format.calculate(answer), answer)
         answer['calculation']['operation'] = 'eval'
-        self.assertIs(cli.calculate(answer), answer)
+        self.assertIs(answer_format.calculate(answer), answer)
 
     def test_verified_retries_only_invalid_answer_and_attaches_reason(self):
         client = FakeClient(self.response(self.answer(), self.answer('P01-02', '75 дней')),
@@ -252,7 +262,7 @@ class CliTests(unittest.TestCase):
         wrong['evidence'] = [{'file': 'fake.txt', 'quote': 'Вымышленная цитата'}]
         wrong['calculation'] = {'operation': 'percent', 'base': '100', 'rate': '5'}
         client = FakeClient(self.response(wrong))
-        with patch.object(cli, 'validate_answer', side_effect=AssertionError('Baseline must not validate')):
+        with patch.object(answer_engine, 'validate_answer', side_effect=AssertionError('Baseline must not validate')):
             answers = self.process(client, mode='baseline', attempts=3)
         self.assertEqual(len(client.calls), 1)
         self.assertEqual(answers['P01-01']['answer'], '999999 руб.')

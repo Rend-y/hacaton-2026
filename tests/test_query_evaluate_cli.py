@@ -17,6 +17,10 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import cli
+import cli_commands
+import pipeline
+import settings
+import reference_data
 import query
 import report
 
@@ -104,10 +108,10 @@ class QueryEvaluationCliTests(unittest.TestCase):
         return OfflineClient()
 
     def invoke(self, arguments, forbid_api=False):
-        api_patch = (patch.object(cli, 'Client', side_effect=AssertionError('No API expected'))
-                     if forbid_api else patch.object(cli, 'Client', return_value=self.client))
-        with api_patch, patch.object(cli, 'ROOT', self.root), patch.object(cli, 'load_env'), \
-             patch.object(cli, 'emit'), patch.object(query, '_output_path', return_value=self.output), \
+        api_patch = (patch.object(pipeline, 'Client', side_effect=AssertionError('No API expected'))
+                     if forbid_api else patch.object(pipeline, 'Client', return_value=self.client))
+        with api_patch, patch.object(settings, 'ROOT', self.root), patch.object(pipeline, 'load_env'), \
+             patch.object(pipeline, 'emit'), patch.object(query, '_output_path', return_value=self.output), \
              contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             return cli.main(arguments)
 
@@ -119,10 +123,11 @@ class QueryEvaluationCliTests(unittest.TestCase):
         return json.loads(path.read_text(encoding='utf-8'))
 
     def test_flag_is_supported_but_optional(self):
-        args = cli.parser().parse_args(self.arguments() + ['--evaluate'])
-        self.assertTrue(args.evaluate)
-        args = cli.parser().parse_args(self.arguments())
-        self.assertFalse(args.evaluate)
+        for suffix, expected in ((['--evaluate'], True), ([], False)):
+            _, arguments, _ = cli_commands.app.parse_args(
+                self.arguments() + suffix, exit_on_error=False, print_error=False)
+            arguments.apply_defaults()
+            self.assertEqual(arguments.arguments['evaluate'], expected)
 
     def test_five_query_answers_are_evaluated_after_generation_not_as_seventy_one(self):
         original_open = Path.open

@@ -52,7 +52,7 @@ def _signature_digest(signature):
 
 def plan_query_evaluation(questions, documents, read_errors, data_dir):
     """Находит однозначные соответствия, не читая answers_public.json и не вызывая ИИ."""
-    from cli import read_questions, read_package
+    from reference_data import read_questions, read_package
 
     if read_errors:
         raise ValueError('Нельзя оценить query по эталону: документы прочитаны не полностью.')
@@ -142,7 +142,7 @@ def _validate_answer_ids(run_dir, questions):
 
 def evaluate_query_run(run_dir, data_dir):
     """Оценивает сохранённые ответы только по найденной выборке официального эталона."""
-    from cli import read_package
+    from reference_data import read_package
 
     run_dir, data_dir = Path(run_dir).resolve(), Path(data_dir).resolve()
     questions, documents, read_errors = _load_snapshot(run_dir)

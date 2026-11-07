@@ -16,6 +16,11 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import cli
+import cli_commands
+import pipeline
+import settings
+import reference_data
+from client import ApiError
 import evaluation
 import query
 
@@ -65,10 +70,10 @@ class QueryTests(unittest.TestCase):
     def invoke(self, arguments, *, client=None, forbid_api=False):
         # Фиксируем папку результата только внутри теста. Публичный CLI выбирает
         # её сам, а тест никогда не записывает файлы в пользовательские runs.
-        client_patch = (patch.object(cli, 'Client', side_effect=AssertionError('Invalid input must not call API'))
-                        if forbid_api else patch.object(cli, 'Client', return_value=client or self.client))
+        client_patch = (patch.object(pipeline, 'Client', side_effect=AssertionError('Invalid input must not call API'))
+                        if forbid_api else patch.object(pipeline, 'Client', return_value=client or self.client))
         with client_patch, patch.object(query, '_output_path', return_value=self.output), \
-             patch.object(cli, 'load_env'), patch.object(cli, 'emit'), \
+             patch.object(pipeline, 'load_env'), patch.object(pipeline, 'emit'), \
              patch.object(evaluation, 'evaluate_run', side_effect=AssertionError('Query must not load gold')), \
              contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             return cli.main(arguments)
@@ -201,9 +206,9 @@ class QueryTests(unittest.TestCase):
     def test_query_requires_both_inputs_and_shows_mode_and_evaluation(self):
         # Справка — пользовательский контракт: лишние режимы ввода больше не нужны.
         output = io.StringIO()
-        with contextlib.redirect_stdout(output), self.assertRaises(SystemExit) as caught:
-            cli.parser().parse_args(['query', '--help'])
-        self.assertEqual(caught.exception.code, 0)
+        with contextlib.redirect_stdout(output):
+            result = cli.main(['query', '--help'])
+        self.assertEqual(result, 0)
         help_text = output.getvalue()
         for option in ('--atacment', '--promt', '--mode', '--evaluate'):
             self.assertIn(option, help_text)
@@ -212,8 +217,44 @@ class QueryTests(unittest.TestCase):
         invalid = [[], ['--atacment', str(self.document)], ['--promt', 'Вопрос?'],
                    ['--atacment', str(self.document), '--promt', 'Вопрос?', '--inspect']]
         for arguments in invalid:
-            with self.subTest(arguments=arguments), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-                cli.parser().parse_args(['query', *arguments])
+            with self.subTest(arguments=arguments):
+                self.assertEqual(self.invoke(['query', *arguments], forbid_api=True), 2)
+
+    def test_generation_without_evaluate_never_reads_reference_dataset(self):
+        # Произвольный документ должен работать даже без поставляемого датасета.
+        with patch.object(settings, 'ROOT', self.root / 'no-reference-data'), \
+             patch.object(reference_data, 'read_questions', side_effect=AssertionError('Reference questions are not inputs')), \
+             patch.object(reference_data, 'read_package', side_effect=AssertionError('Reference packages are not inputs')):
+            result = self.invoke(self.arguments('Какой гарантийный срок?', content=self.document))
+        self.assertEqual(result, 0)
+        self.assertEqual(len(self.client.calls), 1)
+
+    def test_legacy_dataset_commands_and_options_are_rejected_before_api(self):
+        invalid = [
+            ['run', '--packages', 'P01'],
+            ['ask', '--package', 'P01', '--question', 'Срок?'],
+            self.arguments('Срок?') + ['--data', str(self.root)],
+            self.arguments('Срок?') + ['--packages', 'P01'],
+        ]
+        for argv in invalid:
+            with self.subTest(argv=argv):
+                self.assertEqual(self.invoke(argv, forbid_api=True), 2)
+        self.assertFalse(self.output.exists())
+
+    def test_technical_failure_returns_nonzero_and_keeps_auditable_results(self):
+        def failed_request(messages, progress=None):
+            raise ApiError('Model API HTTP 429')
+
+        self.client.complete = failed_request
+        result = self.invoke(self.arguments('Какой гарантийный срок?'))
+        self.assertEqual(result, 2)
+        manifest = self.read_json(self.output / 'manifest.json')
+        self.assertEqual(manifest['status'], 'completed_with_errors')
+        self.assertEqual(manifest['completed_questions'], 1)
+        answer = self.read_json(self.output / 'answers.json')[0]
+        self.assertEqual((answer['status'], answer['error_type']), ('не знаю', 'api'))
+        self.assertIn('429', answer['reason'])
+        self.assertTrue((self.output / 'report.html').is_file())
 
     def test_unreadable_document_prevents_confident_absence(self):
         (self.documents / 'Приложение.doc').write_bytes(b'unsupported-document')

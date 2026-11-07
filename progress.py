@@ -6,6 +6,15 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
+PRINT_LOCK = threading.Lock()
+
+
+def emit(text):
+    """Печатает прогресс без перемешивания строк с сообщениями ожидания API."""
+    with PRINT_LOCK:
+        print(text, flush=True)
+
+
 class RunLog:
     """Пишет одинаковые строки в терминал и файл, скрывая ключи и управляющие коды."""
 

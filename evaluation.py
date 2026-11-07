@@ -20,6 +20,22 @@ COUNT_FIELDS = ('n', 'correct', 'careful', 'lies')
 METRIC_FIELDS = (*COUNT_FIELDS, 'index')
 
 
+def evaluate_saved_run(run_dir, data_dir):
+    """Выбирает оценку выборки query или прежнего пакетного запуска по снимку входов."""
+    run_dir, data_dir = Path(run_dir).resolve(), Path(data_dir).resolve()
+    inputs_path = run_dir / 'inputs.json'
+    snapshot = _read_json(inputs_path) if inputs_path.is_file() else {}
+    rows = snapshot.get('questions', []) if isinstance(snapshot, dict) else []
+    is_query = (isinstance(rows, list) and bool(rows)
+                and all(isinstance(row, dict) and row.get('package') == 'INPUT'
+                        and str(row.get('id', '')).startswith('INPUT-') for row in rows))
+    if is_query:
+        # Эталоны подключаются здесь, после генерации; произвольный ввод от них не зависит.
+        from query_evaluation import evaluate_query_run
+        return evaluate_query_run(run_dir, data_dir)
+    return evaluate_run(run_dir, data_dir)
+
+
 def _read_json(path):
     """Читает объект JSON и возвращает понятную ошибку вместо деталей парсера."""
     try:

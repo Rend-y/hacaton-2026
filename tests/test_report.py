@@ -21,6 +21,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import evaluation
 import report
 import cli
+import cli_commands
+import pipeline
+import query
+import query_evaluation
+import settings
 
 
 class HtmlElements(HTMLParser):
@@ -308,40 +313,43 @@ class ReportTests(unittest.TestCase):
     def test_report_command_requires_one_source(self):
         for arguments in (['report'], ['report', '--run', 'run', '--comparison', 'comparison']):
             with self.subTest(arguments=arguments), contextlib.redirect_stderr(io.StringIO()):
-                with self.assertRaises(SystemExit):
-                    cli.parser().parse_args(arguments)
+                self.assertNotEqual(cli.main(arguments), 0)
 
     def test_report_command_uses_existing_run_without_model_or_evaluator(self):
         # Пересборка отчёта должна работать без ключа и без повторной оценки.
-        with patch.object(cli, 'Client', side_effect=AssertionError('API must remain offline')), \
+        with patch.object(pipeline, 'Client', side_effect=AssertionError('API must remain offline')), \
              patch.object(evaluation, 'evaluate_run', side_effect=AssertionError('Evaluation must not run')), \
-             patch.object(cli, 'emit'), contextlib.redirect_stdout(io.StringIO()):
+             patch.object(cli_commands, 'emit'), contextlib.redirect_stdout(io.StringIO()):
             result = cli.main(['report', '--run', str(self.run)])
         self.assertEqual(result, 0)
         self.assertTrue((self.run / 'report.html').is_file())
 
     def test_report_command_rebuilds_existing_comparison_offline(self):
         _, comparison = self.create_comparison()
-        with patch.object(cli, 'Client', side_effect=AssertionError('API must remain offline')), \
+        with patch.object(pipeline, 'Client', side_effect=AssertionError('API must remain offline')), \
              patch.object(evaluation, 'evaluate_run', side_effect=AssertionError('Evaluation must not run')), \
-             patch.object(cli, 'emit'), contextlib.redirect_stdout(io.StringIO()):
+             patch.object(cli_commands, 'emit'), contextlib.redirect_stdout(io.StringIO()):
             result = cli.main(['report', '--comparison', str(comparison)])
         self.assertEqual(result, 0)
         self.assertTrue((comparison / 'report.html').is_file())
 
-    def test_run_evaluate_creates_html_after_separate_official_evaluation(self):
+    def test_query_evaluate_creates_html_after_separate_official_evaluation(self):
         """Проходит весь CLI с имитацией API и настоящим отдельным оценщиком."""
-        data = self.root / 'synthetic-data'
+        data = self.root / 'data' / 'public'
         package = data / 'packages' / 'P01'
         package.mkdir(parents=True)
         quote = 'Гарантийный срок составляет 12 месяцев.'
         (package / 'contract.txt').write_text(quote, encoding='utf-8')
+        documents = self.root / 'Произвольная папка'
+        documents.mkdir()
+        (documents / 'Договор.txt').write_text(quote, encoding='utf-8')
         (data / 'questions.csv').write_text(
             'id;package;question\nP01-01;P01;Какой гарантийный срок?\n', encoding='utf-8')
         gold_marker = 'SYNTHETIC_GOLD_ONLY_NEVER_SEND_TO_MODEL'
         self.write_json(data / 'answers_public.json', [{
             'id': 'P01-01', 'package': 'P01', 'status': 'ответ',
-            'kind': 'num', 'expected': [12], 'type': 'факт', 'note': gold_marker}])
+            'kind': 'num', 'expected': [12], 'type': 'факт', 'note': gold_marker,
+            'question': 'Какой гарантийный срок?'}])
         output = self.root / 'automatic-run'
         phases = []
         requests = []
@@ -362,13 +370,15 @@ class ReportTests(unittest.TestCase):
                 test.assertFalse((output / 'evaluation.json').exists())
                 test.assertNotIn(gold_marker, json.dumps(messages, ensure_ascii=False))
                 self.stats.update(requests=1, prompt_tokens=12, completion_tokens=5)
+                payload = json.loads(messages[1]['content'])
+                document = payload['documents'][0]
                 return json.dumps({'answers': [{
-                    'id': 'P01-01', 'status': 'ответ', 'answer': '12 месяцев',
-                    'evidence': [{'file': 'contract.txt', 'quote': quote}],
+                    'id': payload['questions'][0]['id'], 'status': 'ответ', 'answer': '12 месяцев',
+                    'evidence': [{'file': document['file'], 'quote': quote}],
                     'reason': 'Срок указан в документе.'}]}, ensure_ascii=False), {
                         'usage': {'prompt_tokens': 12, 'completion_tokens': 5}, 'finish_reason': 'stop'}
 
-        original_evaluate = evaluation.evaluate_run
+        original_evaluate = query_evaluation.evaluate_query_run
         exported_before_evaluation = []
 
         def evaluate_after_generation(run_dir, data_dir):
@@ -380,12 +390,13 @@ class ReportTests(unittest.TestCase):
             exported_before_evaluation.append((run_dir / 'answers.csv').read_bytes())
             return original_evaluate(run_dir, data_dir)
 
-        with patch.object(cli, 'Client', return_value=OfflineClient()), \
-             patch.object(cli, 'load_env'), patch.object(cli, 'emit'), \
-             patch.object(evaluation, 'evaluate_run', side_effect=evaluate_after_generation), \
+        with patch.object(pipeline, 'Client', return_value=OfflineClient()), \
+             patch.object(pipeline, 'load_env'), patch.object(cli_commands, 'emit'), \
+             patch.object(query_evaluation, 'evaluate_query_run', side_effect=evaluate_after_generation), \
+             patch.object(settings, 'ROOT', self.root), patch.object(query, '_output_path', return_value=output), \
              contextlib.redirect_stdout(io.StringIO()):
-            result = cli.main(['run', '--data', str(data), '--output', str(output),
-                               '--mode', 'verified', '--repair-attempts', '0', '--evaluate'])
+            result = cli.main(['query', '--atacment', str(documents),
+                               '--promt', 'Какой гарантийный срок?', '--mode', 'verified', '--evaluate'])
 
         self.assertEqual(result, 0)
         self.assertEqual(phases, ['generation', 'evaluation'])

@@ -1,6 +1,10 @@
-# Запускает CLI через установленный Python или Python из Codex на этом компьютере.
+# Запускает CLI из локального окружения; явный ITFEST_PYTHON имеет приоритет.
 $ErrorActionPreference = 'Stop'
 $pythonPath = $env:ITFEST_PYTHON
+if (-not $pythonPath) {
+  $projectPython = Join-Path $PSScriptRoot '.venv/Scripts/python.exe'
+  if (Test-Path -LiteralPath $projectPython) { $pythonPath = $projectPython }
+}
 if (-not $pythonPath) {
   $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
   if ($pythonCommand -and $pythonCommand.Source -notlike '*Microsoft\WindowsApps*') {
@@ -12,7 +16,7 @@ if (-not $pythonPath) {
   if (Test-Path -LiteralPath $bundledPython) { $pythonPath = $bundledPython }
 }
 if (-not $pythonPath) {
-  throw 'Install Python 3.10+ or set ITFEST_PYTHON to the full path of python.exe.'
+  throw 'Установите Python 3.10+ и выполните .\setup.ps1 либо задайте ITFEST_PYTHON.'
 }
 $cliArguments = $args
 # Пути к данным и результатам остаются предсказуемыми при запуске из любой папки.
