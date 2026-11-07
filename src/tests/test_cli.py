@@ -216,6 +216,21 @@ class CliTests(unittest.TestCase):
         self.assertIn(quote, correction['errors'][0])
         self.assertEqual(answers['P01-01'], corrected)
 
+    def test_verified_restores_case_ending_from_file_without_retry(self):
+        filename = 'notice.txt'
+        source = '2.2. Участник должен иметь лицензию на деятельность по технической защите конфиденциальной информации.'
+        quote = source.removeprefix('2.2. ').replace('защите', 'защиты')
+        raw = {'id': 'P01-01', 'status': 'ответ', 'answer': 'Лицензия на техническую защиту информации',
+               'evidence': [{'file': filename, 'quote': quote}]}
+        client = FakeClient(self.response(raw))
+
+        answers = self.process(client, questions=self.questions[:1], documents={filename: source})
+
+        self.assertEqual(len(client.calls), 1)
+        self.assertEqual(answers['P01-01']['answer'], raw['answer'])
+        self.assertEqual(answers['P01-01']['evidence'], [{'file': filename, 'quote': source}])
+        self.assertTrue(any(event['event'] == 'quote_restored' for event in self.events if 'event' in event))
+
     def test_missing_id_is_retried_then_fails_closed(self):
         client = FakeClient(self.response(self.answer()), self.response())
         answers = self.process(client, attempts=1)

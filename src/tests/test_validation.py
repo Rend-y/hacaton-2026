@@ -7,7 +7,7 @@
 import copy
 import unittest
 
-from src.generation.validation import norm, validate_answer
+from src.generation.validation import norm, restore_quote_endings, validate_answer
 
 
 class ValidationTests(unittest.TestCase):
@@ -35,6 +35,17 @@ class ValidationTests(unittest.TestCase):
     def test_fake_quote_rejected(self):
         answer = self.fact('12 месяцев', 'Гарантия составляет 12 месяцев.')
         self.assertTrue(validate_answer(answer, {'notice.txt': 'Гарантия составляет 24 месяца.'}))
+
+    def test_case_ending_repair_leaves_different_or_ambiguous_sources_untouched(self):
+        source = 'Заказчик проверяет сведения о лицензии по технической защите информации в течение 12 дней.'
+        answer = self.fact('12 дней', source.replace('защите', 'защиты'))
+        candidates = (source.replace('12', '24'), source.replace('проверяет', 'не проверяет'),
+                      source + '\n' + source.replace('12', '24'))
+        for candidate in candidates:
+            with self.subTest(source=candidate):
+                docs = {'notice.txt': candidate}
+                self.assertIs(restore_quote_endings(answer, docs), answer)
+                self.assertTrue(validate_answer(answer, docs))
 
     def test_too_short_quote_rejected(self):
         answer = self.fact('12 месяцев', '12')

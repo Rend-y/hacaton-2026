@@ -11,7 +11,7 @@ from src.generation.client import ApiError, ResponseTruncated
 from src.progress import RunLog, emit
 from src.generation.prompts import messages
 from src.settings import question_batch_limit
-from src.generation.validation import norm, validate_answer
+from src.generation.validation import norm, restore_quote_endings, validate_answer
 
 
 def question_batches(questions, limit):
@@ -161,6 +161,11 @@ def process_questions(client, mode, package, questions, documents, read_errors, 
                 if answer is not raw:
                     say('%s: процент пересчитан кодом: %s. Теперь проверяем основания обоих операндов.' %
                         (question['id'], answer['answer']))
+                restored = restore_quote_endings(answer, documents)
+                if restored is not answer:
+                    say('%s: цитата восстановлена дословно из указанного файла.' % question['id'])
+                    trace({'package': package, 'id': question['id'], 'attempt': attempt, 'event': 'quote_restored'})
+                answer = restored
                 errors = validate_answer(answer, documents, read_errors)
                 if not errors:
                     answer = {**answer, 'status': norm(answer['status'])}

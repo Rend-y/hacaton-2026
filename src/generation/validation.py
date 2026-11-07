@@ -22,6 +22,7 @@ _NUMBER = re.compile(
     r'(?<![\w])[-+]?\d+(?:[ \u00a0\u202f]\d{3})*(?:[.,]\d+)?(?![\w])'
 )
 _PARAGRAPH = re.compile(r'^\s*\d+(?:\.\d+)*[.)]\s+', re.MULTILINE)
+_CASE_ENDING = re.compile(r'\b[а-я]{5,}([еы])\b')
 
 
 def norm(text: str) -> str:
@@ -38,6 +39,41 @@ def _quote_hint(normalized_quote: str, document: str) -> str | None:
     candidates = {norm(line): line for line in lines if 8 <= len(line) <= 350}
     matches = get_close_matches(normalized_quote, candidates, n=2, cutoff=0.7)
     return candidates[matches[0]] if len(matches) == 1 else None
+
+
+def _same_quote_with_case_ending(quote: str, source: str) -> bool:
+    # Модель может опустить номер пункта, но не заменить его другим номером.
+    if not _PARAGRAPH.match(quote):
+        source = _PARAGRAPH.sub('', source)
+    if len(quote) != len(source):
+        return False
+    differences = [i for i, (original, exact) in enumerate(zip(quote, source)) if original != exact]
+    if len(differences) != 1:
+        return False
+    index = differences[0]
+    return source[index] in 'еы' and any(match.start(1) == index for match in _CASE_ENDING.finditer(quote))
+
+
+def restore_quote_endings(answer: dict, docs: dict[str, str]) -> dict:
+    """Копирует из файла однозначную строку с одной ошибкой в падежном окончании."""
+    evidence = answer.get('evidence')
+    status = answer.get('status')
+    if not isinstance(status, str) or norm(status) != 'ответ' or not isinstance(evidence, list):
+        return answer
+    restored = evidence[:]
+    for index, item in enumerate(evidence):
+        if not isinstance(item, dict):
+            continue
+        filename, quote = item.get('file'), item.get('quote')
+        if not isinstance(filename, str) or filename not in docs or not isinstance(quote, str):
+            continue
+        document, normalized_quote = docs[filename], norm(quote)
+        if len(normalized_quote) < 40 or normalized_quote in norm(document):
+            continue
+        source = _quote_hint(normalized_quote, document)
+        if source and _same_quote_with_case_ending(normalized_quote, norm(source)):
+            restored[index] = {**item, 'quote': source}
+    return {**answer, 'evidence': restored} if restored != evidence else answer
 
 
 def _decimal(value: Any) -> Decimal | None:
