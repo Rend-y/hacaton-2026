@@ -19,6 +19,7 @@ from src.workflows import pipeline
 from src import settings
 from src.evaluation import reference_data
 from src.generation.client import ApiError
+from src.generation.prompts import BASELINE, VERIFIED
 from src.evaluation import runs as evaluation
 from src.workflows import query
 
@@ -42,8 +43,9 @@ class OfflineClient:
         self.stats['requests'] += 1
         self.stats['prompt_tokens'] += 30
         self.stats['completion_tokens'] += 10
-        if 'question' in payload:
-            response = {'status': 'ответ', 'answer': '12 месяцев', 'file': document['file'], 'quote': document['text']}
+        if messages[0]['content'] == BASELINE:
+            response = [{'id': item['id'], 'status': 'ответ', 'answer': '12 месяцев',
+                         'file': document['file'], 'quote': document['text']} for item in payload['questions']]
         else:
             response = {'answers': [{'id': item['id'], 'status': 'ответ', 'answer': '12 месяцев',
                                      'evidence': [{'file': document['file'], 'quote': document['text']}],
@@ -170,11 +172,12 @@ class QueryTests(unittest.TestCase):
                 self.assertEqual(result, 1)
                 self.assertFalse(self.output.exists())
 
-    def test_workers_overlap_batches_with_separate_transports_and_keep_output_order(self):
+    def test_baseline_workers_overlap_batches_of_five_and_keep_output_order(self):
         first_two = threading.Barrier(2)
         third_started = threading.Event()
         lock = threading.Lock()
         transports = []
+        batches = []
         active = peak = 0
         test = self
 
@@ -188,44 +191,48 @@ class QueryTests(unittest.TestCase):
                 nonlocal active, peak
                 test.assertIs(threading.current_thread(), self.worker)
                 messages = json.loads(request.data)['messages']
-                question = json.loads(messages[1]['content'])['questions'][0]
-                question_id = question['id']
+                ids = [row['id'] for row in json.loads(messages[1]['content'])['questions']]
+                first_id = ids[0]
                 with lock:
+                    batches.append(ids)
                     active += 1
                     peak = max(peak, active)
                 try:
-                    if question_id in ('INPUT-001', 'INPUT-002'):
+                    if first_id in ('INPUT-001', 'INPUT-006'):
                         first_two.wait(timeout=5)
-                    if question_id == 'INPUT-001':
+                    if first_id == 'INPUT-001':
                         test.assertTrue(third_started.wait(timeout=5))
-                    if question_id == 'INPUT-003':
+                    if first_id == 'INPUT-011':
                         third_started.set()
                         raise urllib.error.HTTPError(request.full_url, 400, 'offline failure', {}, io.BytesIO())
-                    answer = {'id': question_id, 'status': 'не знаю'}
+                    answers = [{'id': question_id, 'status': 'не знаю', 'answer': '', 'quote': '', 'file': ''}
+                               for question_id in reversed(ids)]
                     return io.BytesIO(json.dumps({'choices': [{'finish_reason': 'stop',
-                        'message': {'content': json.dumps({'answers': [answer]})}}]}).encode('utf-8'))
+                        'message': {'content': json.dumps(answers)}}]}).encode('utf-8'))
                 finally:
                     with lock:
                         active -= 1
 
-        env = {'MAX_WORKERS': '2', 'MAX_QUESTIONS_PER_REQUEST': '1', 'API_KEY': 'test-key',
+        env = {'MAX_WORKERS': '2', 'MAX_QUESTIONS_PER_REQUEST': '5', 'API_KEY': 'test-key',
                'BASE_URL': 'https://example.test/v1', 'MODEL': 'offline-model'}
         with patch.dict('os.environ', env), patch.object(query, 'load_env'), \
              patch.object(query, '_output_path', return_value=self.output), \
              patch('src.generation.client.urllib.request.build_opener', side_effect=OfflineTransport), \
              contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            result = cli.main(self.arguments('Первый?', 'Второй?', 'Третий?', 'Четвёртый?'))
+            result = cli.main(self.arguments(*(f'Вопрос {i}?' for i in range(1, 12))) + ['--mode', 'baseline'])
 
         self.assertEqual(result, 2)
         self.assertEqual(peak, 2)
         self.assertEqual(len(transports), 2)
+        ids = [f'INPUT-{i:03d}' for i in range(1, 12)]
+        self.assertEqual(sorted(batches), [ids[:5], ids[5:10], ids[10:]])
         answers = self.read_json(self.output / 'answers.json')
-        self.assertEqual([answer['id'] for answer in answers], [f'INPUT-{i:03d}' for i in range(1, 5)])
-        self.assertEqual([answer.get('error_type') for answer in answers], [None, None, 'api', None])
+        self.assertEqual([answer['id'] for answer in answers], ids)
+        self.assertEqual([answer.get('error_type') for answer in answers], [None] * 10 + ['api'])
         manifest = self.read_json(self.output / 'manifest.json')
         self.assertEqual(manifest['workers'], 2)
-        self.assertEqual(manifest['stats']['requests'], 4)
-        self.assertEqual(manifest['stats']['successful_requests'], 3)
+        self.assertEqual(manifest['stats']['requests'], 3)
+        self.assertEqual(manifest['stats']['successful_requests'], 2)
 
     def test_literal_question_with_date_or_filename_is_not_mistaken_for_path(self):
         questions = ['Какая гарантия действует на 01/11/2026?', 'Что указано в Договор.txt?']
@@ -275,7 +282,6 @@ class QueryTests(unittest.TestCase):
         self.assertEqual(previous.read_text(encoding='utf-8'), 'previous-result')
 
     def test_mode_defaults_to_verified_and_baseline_selects_flat_prompt(self):
-        from src.generation.prompts import BASELINE, VERIFIED
         result = self.invoke(self.arguments('Вопрос?'))
         self.assertEqual(result, 0)
         self.assertEqual(self.read_json(self.output / 'manifest.json')['mode'], 'verified')
@@ -283,13 +289,15 @@ class QueryTests(unittest.TestCase):
         self.output = self.root / 'baseline-result'
         baseline = OfflineClient()
         with patch.dict('os.environ', {'MAX_QUESTIONS_PER_REQUEST': '2'}):
-            result = self.invoke(self.arguments('Вопрос?') + ['--mode', 'baseline'], client=baseline)
+            result = self.invoke(self.arguments('Первый?', 'Второй?', 'Третий?') + ['--mode', 'baseline'],
+                                 client=baseline)
         self.assertEqual(result, 0)
         manifest = self.read_json(self.output / 'manifest.json')
         self.assertEqual(manifest['mode'], 'baseline')
-        self.assertEqual(manifest['max_questions_per_request'], 1)
-        self.assertEqual(baseline.system_prompts, [BASELINE])
-        self.assertEqual(baseline.calls[0]['question'], 'Вопрос?')
+        self.assertEqual(manifest['max_questions_per_request'], 2)
+        self.assertEqual(baseline.system_prompts, [BASELINE, BASELINE])
+        self.assertEqual([[row['question'] for row in call['questions']] for call in baseline.calls],
+                         [['Первый?', 'Второй?'], ['Третий?']])
         self.assertEqual(self.read_json(self.output / 'answers.json')[0]['answer'], '12 месяцев')
 
     def test_query_requires_both_inputs_and_shows_mode_and_evaluation(self):

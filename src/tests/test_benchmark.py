@@ -19,7 +19,7 @@ from src.reporting.report import build_run_model
 
 
 class BenchmarkTests(unittest.TestCase):
-    def exercise(self, failure=False, truncated=False, *, configured_limit=None, initial_calls=16):
+    def exercise(self, failure=False, truncated=False, *, configured_limit=None, initial_calls=16, mode='verified'):
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as temporary:
             root = Path(temporary)
             shutil.copytree(settings.ROOT / 'data' / 'public', root / 'data' / 'public')
@@ -49,7 +49,7 @@ class BenchmarkTests(unittest.TestCase):
                 def complete(self, messages, progress=None):
                     payload = json.loads(messages[1]['content'])
                     owner.assertLessEqual(len(payload['questions']), batch_limit)
-                    packages = {q['package'] for q in payload['questions']}
+                    packages = {q['id'].split('-')[0] for q in payload['questions']}
                     owner.assertEqual(len(packages), 1)
                     name = next(iter(packages))
                     expected = {p.read_text(encoding='utf-8-sig') for p in (root/'data/public/packages'/name).glob('*.txt')}
@@ -62,6 +62,10 @@ class BenchmarkTests(unittest.TestCase):
                         raise ResponseTruncated('output limit')
                     if failure and first_request:
                         raise ApiError('Model API HTTP 429')
+                    if mode == 'baseline':
+                        answers = [{'id': q['id'], 'status': 'не знаю', 'answer': '', 'quote': '', 'file': ''}
+                                   for q in payload['questions']]
+                        return json.dumps(answers), {'finish_reason': 'stop'}
                     answers = [{'id': q['id'], 'status': 'не знаю', 'answer': '', 'evidence': []}
                                for q in payload['questions']]
                     return json.dumps({'answers': answers}), {'finish_reason': 'stop'}
@@ -80,7 +84,7 @@ class BenchmarkTests(unittest.TestCase):
                 for name in ('MAX_QUESTIONS_PER_REQUEST', 'TIMEOUT_SECONDS', 'MAX_TOKENS',
                              'CONTEXT_TOKEN_LIMIT', 'MAX_WORKERS'):
                     os.environ.pop(name, None)
-                code = cli.main(['check-all'])
+                code = cli.main(['check-all', '--mode', mode])
             self.assertEqual(client_factory.call_args.args[3:], (timeout, max_tokens))
             self.assertEqual(client_factory.call_args.kwargs['context_token_limit'], context_limit)
             self.assertEqual(client_factory.call_args.kwargs['max_workers'], workers)
@@ -116,3 +120,6 @@ class BenchmarkTests(unittest.TestCase):
 
     def test_truncation_recovers_into_one_report_with_all_questions(self):
         self.exercise(truncated=True)
+
+    def test_baseline_batches_questions_and_splits_a_truncated_response(self):
+        self.exercise(truncated=True, mode='baseline')

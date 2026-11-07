@@ -17,6 +17,7 @@ from src import cli
 from src.workflows import pipeline
 from src import settings
 from src.evaluation import reference_data
+from src.generation.prompts import BASELINE
 from src.workflows import query
 from src.reporting import report
 
@@ -96,9 +97,10 @@ class QueryEvaluationCliTests(unittest.TestCase):
                 self.stats['requests'] += 1
                 self.stats['prompt_tokens'] += 30
                 self.stats['completion_tokens'] += 10
-                if 'question' in payload:
-                    response = {'status': 'ответ', 'answer': '12 единиц',
-                                'file': document['file'], 'quote': document['text']}
+                if messages[0]['content'] == BASELINE:
+                    response = [{'id': item['id'], 'status': 'ответ', 'answer': '12 единиц',
+                                 'file': document['file'], 'quote': document['text']}
+                                for item in payload['questions']]
                 else:
                     response = {'answers': [{'id': item['id'], 'status': 'ответ', 'answer': '12 единиц',
                                              'evidence': [{'file': document['file'], 'quote': document['text']}],
@@ -182,16 +184,15 @@ class QueryEvaluationCliTests(unittest.TestCase):
 
         def wrong_first_answer(messages, progress=None):
             content, meta = original_complete(messages, progress)
-            if len(self.requests) == 1:
-                answer = json.loads(content)
-                answer['answer'] = '99 единиц'
-                content = json.dumps(answer, ensure_ascii=False)
-            return content, meta
+            answers = json.loads(content)
+            answers[0]['answer'] = '99 единиц'
+            return json.dumps(answers, ensure_ascii=False), meta
 
         self.client.complete = wrong_first_answer
-        result = self.invoke(self.arguments() + ['--mode', 'baseline', '--evaluate'])
+        with patch.dict('os.environ', {'MAX_QUESTIONS_PER_REQUEST': '5', 'MAX_WORKERS': '1'}):
+            result = self.invoke(self.arguments() + ['--mode', 'baseline', '--evaluate'])
         self.assertEqual(result, 0)
-        self.assertEqual(len(self.requests), 5)
+        self.assertEqual(len(self.requests), 1)
         self.assertEqual(self.read_json(self.output / 'manifest.json')['mode'], 'baseline')
         self.assertEqual(self.read_json(self.output / 'answers.json')[0]['answer'], '99 единиц')
         assessed = self.read_json(self.output / 'evaluation.json')

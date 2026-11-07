@@ -63,7 +63,7 @@ def _run_batch(args: QueryOptions, loaded, values):
     # Используем ту же консервативную оценку контекста, что и API-клиент. Большой
     # набор отклоняется до запроса, а не урезается скрытно до удобного размера.
     load_env(settings.ROOT / '.env')
-    batch_limit = settings.question_batch_limit(args.mode)
+    batch_limit = settings.question_batch_limit()
     options = RunOptions.from_env(args.mode, _output_path(), repair_attempts=args.repair_attempts,
                                   max_tokens=args.max_tokens, timeout=args.timeout)
     for batch in question_batches(rows, batch_limit):

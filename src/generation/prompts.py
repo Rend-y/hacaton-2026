@@ -1,7 +1,7 @@
 """Промпты исходной и проверяемой версии без эталонных ответов.
 
-Baseline запрашивает один простой объект. Verified запрашивает ответы
-по нескольким вопросам с доказательствами для локальной проверки.
+Оба режима принимают группу вопросов. Baseline запрашивает простые ответы,
+а verified дополнительно запрашивает доказательства для локальной проверки.
 """
 import json
 
@@ -15,8 +15,9 @@ SCHEMA = '''Верни только JSON вида {"answers":[{"id":"ID вопр
 Для отсутствия сведений и отказа answer может быть пустым, evidence — пустой список.
 Не выводи рассуждения, Markdown или текст вне JSON.'''
 
-BASELINE = """Ответь на вопрос о закупке по приложенным документам.
-Верни только один JSON-объект с полями status, answer, quote, file. Все значения — строки.
+BASELINE = """Ответь на вопросы о закупке по приложенным документам.
+Верни только JSON-массив объектов с полями id, status, answer, quote, file. Все значения — строки.
+Верни один объект на каждый вопрос, скопировав его id.
 Допустимые статусы: ответ, расхождение, нет в документах, не знаю.
 Для ответа или расхождения укажи значение, цитату и имя файла. Числа пиши цифрами.
 Для расхождения перечисли оба значения. Для двух остальных статусов оставь answer, quote и file пустыми."""
@@ -61,7 +62,7 @@ def messages(mode, documents, questions, read_errors, correction=None):
     """Отделяет системные правила от документов и добавляет причины исправлений."""
     payload = {'documents': [{'file': name, 'text': text} for name, text in documents.items()]}
     if mode == 'baseline':
-        payload['question'] = questions[0]['question']
+        payload['questions'] = [{'id': row['id'], 'question': row['question']} for row in questions]
     else:
         payload.update(read_errors=read_errors, questions=questions)
     if mode == 'verified' and correction:

@@ -17,7 +17,7 @@ from src.progress import emit
 def run_public(mode='verified'):
     """Генерирует все ответы, затем один раз запускает check.py по полному эталону."""
     load_env(settings.ROOT / '.env')
-    batch_limit = settings.question_batch_limit(mode)
+    batch_limit = settings.question_batch_limit()
     data = settings.ROOT / 'data' / 'public'
     questions = read_questions(data)
     documents = {name: read_package(data, name) for name in dict.fromkeys(q['package'] for q in questions)}

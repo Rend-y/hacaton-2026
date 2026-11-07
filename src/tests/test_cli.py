@@ -251,7 +251,8 @@ class CliTests(unittest.TestCase):
         self.assertTrue(any(event.get('event') == 'api_error' for event in self.events))
 
     def test_requests_are_capped_for_arbitrary_question_counts_in_both_modes(self):
-        for mode, limit in (('baseline', 1), ('verified', 5)):
+        limit = 5
+        for mode in ('baseline', 'verified'):
             for count in (1, 5, 6, 10, 13, 21):
                 with self.subTest(mode=mode, count=count):
                     self.events.clear()
@@ -259,20 +260,19 @@ class CliTests(unittest.TestCase):
                                  for i in range(count)]
                     groups = [questions[i:i + limit] for i in range(0, count, limit)]
                     if mode == 'baseline':
-                        reply = json.dumps({'status': 'ответ', 'answer': '30 дней', 'quote': '', 'file': ''})
-                        client = FakeClient(*([reply] * count))
+                        client = FakeClient(*(json.dumps([
+                            {'id': q['id'], 'status': 'ответ', 'answer': '30 дней', 'quote': '', 'file': ''}
+                            for q in group]) for group in groups))
                     else:
                         client = FakeClient(*(self.response(*(self.answer(q['id']) for q in group))
                                               for group in groups))
                     answers = self.process(client, mode=mode, questions=questions)
                     payloads = [json.loads(call[1]['content']) for call in client.calls]
+                    self.assertEqual([len(p['questions']) for p in payloads], [len(g) for g in groups])
+                    self.assertEqual([q['id'] for p in payloads for q in p['questions']],
+                                     [q['id'] for q in questions])
                     if mode == 'baseline':
-                        self.assertEqual([p['question'] for p in payloads], [q['question'] for q in questions])
-                        self.assertTrue(all(p.keys() == {'documents', 'question'} for p in payloads))
-                    else:
-                        self.assertEqual([len(p['questions']) for p in payloads], [len(g) for g in groups])
-                        self.assertEqual([q['id'] for p in payloads for q in p['questions']],
-                                         [q['id'] for q in questions])
+                        self.assertTrue(all(p.keys() == {'documents', 'questions'} for p in payloads))
                     self.assertEqual(list(answers), [q['id'] for q in questions])
                     self.assertTrue(all(a['status'] == 'ответ' for a in answers.values()))
                     for payload in payloads:
@@ -349,13 +349,14 @@ class CliTests(unittest.TestCase):
         self.assertTrue(all(answer['error_type'] == 'input_read' for answer in answers.values()))
 
     def test_baseline_does_not_validate_repair_or_recompute(self):
-        wrong = {'status': 'ответ', 'answer': '999999 руб.', 'file': 'fake.txt', 'quote': 'Вымышленная цитата'}
-        malformed = {**wrong, 'answer': 999999}
-        client = FakeClient(json.dumps(wrong), json.dumps(malformed))
+        wrong = {'id': 'P01-01', 'status': 'ответ', 'answer': '999999 руб.',
+                 'file': 'fake.txt', 'quote': 'Вымышленная цитата'}
+        malformed = {**wrong, 'id': 'P01-02', 'answer': 999999}
+        client = FakeClient(json.dumps([malformed, wrong]))
         with patch.object(answer_engine, 'validate_answer', side_effect=AssertionError('Baseline must not validate')), \
              patch.object(answer_engine, 'calculate', side_effect=AssertionError('Baseline must not calculate')):
             answers = self.process(client, mode='baseline', attempts=3)
-        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(len(client.calls), 1)
         self.assertEqual(answers['P01-01']['answer'], '999999 руб.')
         self.assertEqual(answers['P01-01']['evidence'][0]['file'], 'fake.txt')
         self.assertEqual(answers['P01-02']['status'], 'не знаю')

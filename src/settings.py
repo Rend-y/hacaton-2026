@@ -26,9 +26,7 @@ def _positive_env_int(name: str, default: int) -> int:
     return value
 
 
-def question_batch_limit(mode: str) -> int:
-    if mode == 'baseline':
-        return 1
+def question_batch_limit() -> int:
     return _positive_env_int('MAX_QUESTIONS_PER_REQUEST', DEFAULT_MAX_QUESTIONS_PER_REQUEST)
 
 

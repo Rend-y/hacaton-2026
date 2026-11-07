@@ -4,7 +4,7 @@ import re
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, localcontext
 
 FIELDS = ['id', 'status', 'answer', 'quote', 'file']
-BASELINE_FIELDS = {'status', 'answer', 'quote', 'file'}
+BASELINE_FIELDS = frozenset(FIELDS)
 
 
 def _response_json(content):
@@ -13,17 +13,6 @@ def _response_json(content):
         text = re.sub(r'^```(?:json)?\s*', '', text)
         text = re.sub(r'\s*```$', '', text)
     return json.loads(text)
-
-
-def parse_baseline_answer(content, question_id):
-    """Связывает плоский ответ с вопросом и приводит к формату выгрузки."""
-    parsed = _response_json(content)
-    if (not isinstance(parsed, dict) or parsed.keys() != BASELINE_FIELDS
-            or not all(isinstance(value, str) for value in parsed.values())):
-        raise ValueError('Expected a JSON object with string fields status, answer, quote and file')
-    quote, file = parsed['quote'], parsed['file']
-    return {'id': question_id, 'status': parsed['status'], 'answer': parsed['answer'],
-            'evidence': [{'quote': quote, 'file': file}] if quote or file else []}
 
 
 def parse_answers(content):
@@ -40,6 +29,18 @@ def parse_answers(content):
             raise ValueError('Duplicate answer ID')
         found[row['id']] = row
     return found
+
+
+def parse_baseline_answers(content):
+    """Приводит плоские ответы к формату выгрузки, пропуская некорректные строки."""
+    answers = {}
+    for question_id, row in parse_answers(content).items():
+        if row.keys() != BASELINE_FIELDS or not all(isinstance(value, str) for value in row.values()):
+            continue
+        quote, file = row['quote'], row['file']
+        answers[question_id] = {'id': question_id, 'status': row['status'], 'answer': row['answer'],
+                                'evidence': [{'quote': quote, 'file': file}] if quote or file else []}
+    return answers
 
 
 def calculate(answer):

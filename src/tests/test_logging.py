@@ -16,6 +16,7 @@ from unittest.mock import Mock, patch
 
 from src.generation import answer_engine
 from src.generation.client import ApiError, Client
+from src.generation.prompts import BASELINE
 from src.progress import RunLog, heartbeat
 
 
@@ -29,7 +30,7 @@ class FakeClient:
     def complete(self, messages, progress=None):
         self.calls.append(messages)
         answer = self.answers.pop(0)
-        return json.dumps(answer if 'question' in json.loads(messages[1]['content']) else {'answers': [answer]},
+        return json.dumps([answer] if messages[0]['content'] == BASELINE else {'answers': [answer]},
                           ensure_ascii=False), {'usage': {}}
 
 
@@ -158,7 +159,7 @@ class WorkflowLogTests(unittest.TestCase):
 
     def test_baseline_explicitly_reports_disabled_validation(self):
         quote = 'Несуществующая цитата со сроком 12 месяцев.'
-        answer = {'status': 'ответ', 'answer': '12 месяцев', 'file': 'source.txt', 'quote': quote}
+        answer = {'id': 'P02-custom', 'status': 'ответ', 'answer': '12 месяцев', 'file': 'source.txt', 'quote': quote}
         result = self.process(FakeClient(answer), mode='baseline')
         text = '\n'.join(self.logs).lower()
         self.assertEqual(result['P02-custom']['evidence'][0]['quote'], quote)

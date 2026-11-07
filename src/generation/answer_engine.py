@@ -6,7 +6,7 @@
 import re
 import time
 
-from src.generation.answers import abstain, calculate, parse_answers, parse_baseline_answer
+from src.generation.answers import abstain, calculate, parse_answers, parse_baseline_answers
 from src.generation.client import ApiError, ResponseTruncated
 from src.progress import RunLog, emit
 from src.generation.prompts import messages
@@ -77,8 +77,8 @@ def process_questions(client, mode, package, questions, documents, read_errors, 
         say('Нет читаемых документов: API не вызываем, возвращаем «не знаю».')
         trace({'package': package, 'event': 'unreadable', 'read_errors': read_errors})
         return {q['id']: {**abstain(q, '; '.join(read_errors)), 'error_type': 'input_read'} for q in questions}
-    if batch_limit is None or mode == 'baseline':
-        batch_limit = question_batch_limit(mode)
+    if batch_limit is None:
+        batch_limit = question_batch_limit()
     if len(pending) > batch_limit:
         groups = question_batches(pending, batch_limit)
         log_batch_plan(package, groups, batch_limit, trace, log, batch=_batch)
@@ -102,18 +102,13 @@ def process_questions(client, mode, package, questions, documents, read_errors, 
             content, meta = client.complete(request_messages, progress=api_progress)
             say('Локально: разбираем JSON ответа.')
             try:
-                if mode == 'baseline':
-                    question_id = pending[0]['id']
-                    candidates = {question_id: parse_baseline_answer(content, question_id)}
-                else:
-                    candidates = parse_answers(content)
-                    if set(candidates) - requested_ids:
-                        raise ValueError('Response contains unrequested question IDs')
+                candidates = parse_baseline_answers(content) if mode == 'baseline' else parse_answers(content)
+                if set(candidates) - requested_ids:
+                    raise ValueError('Response contains unrequested question IDs')
                 parse_error = None
             except (ValueError, TypeError):
                 candidates = {}
-                parse_error = 'Response was not valid answers JSON or IDs were invalid' if mode == 'verified' else (
-                    'Response was not a JSON object with string fields status, answer, quote and file')
+                parse_error = 'Response was not valid answers JSON or IDs were invalid'
                 say('Локально: ответ не соответствует ожидаемому формату JSON.')
             if parse_error is None:
                 say('Локально: JSON разобран, записей ответа: %s.' % len(candidates))
@@ -151,7 +146,7 @@ def process_questions(client, mode, package, questions, documents, read_errors, 
             errors = []
             if raw is None:
                 say('%s: ответа в JSON нет; фиксируем ошибку формата.' % question['id'])
-                errors = [parse_error or 'Missing answer ID']
+                errors = [parse_error or ('Missing or invalid baseline answer' if mode == 'baseline' else 'Missing answer ID')]
                 answer = abstain(question, errors[0])
             elif mode == 'verified':
                 status = norm(raw['status']) if isinstance(raw.get('status'), str) else ''
