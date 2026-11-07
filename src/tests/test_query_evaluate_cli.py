@@ -93,12 +93,18 @@ class QueryEvaluationCliTests(unittest.TestCase):
                 owner.assertNotIn(owner.gold_marker, json.dumps(messages, ensure_ascii=False))
                 payload = json.loads(messages[1]['content'])
                 document = payload['documents'][0]
-                self.stats.update(requests=1, prompt_tokens=30, completion_tokens=10)
-                answers = [{'id': item['id'], 'status': 'ответ', 'answer': '12 единиц',
-                            'evidence': [{'file': document['file'], 'quote': document['text']}],
-                            'reason': 'Синтетический показатель указан в документе.'}
-                           for item in payload['questions']]
-                return json.dumps({'answers': answers}, ensure_ascii=False), {
+                self.stats['requests'] += 1
+                self.stats['prompt_tokens'] += 30
+                self.stats['completion_tokens'] += 10
+                if 'question' in payload:
+                    response = {'status': 'ответ', 'answer': '12 единиц',
+                                'file': document['file'], 'quote': document['text']}
+                else:
+                    response = {'answers': [{'id': item['id'], 'status': 'ответ', 'answer': '12 единиц',
+                                             'evidence': [{'file': document['file'], 'quote': document['text']}],
+                                             'reason': 'Синтетический показатель указан в документе.'}
+                                            for item in payload['questions']]}
+                return json.dumps(response, ensure_ascii=False), {
                     'usage': {'prompt_tokens': 30, 'completion_tokens': 10}, 'finish_reason': 'stop'}
 
         return OfflineClient()
@@ -106,7 +112,7 @@ class QueryEvaluationCliTests(unittest.TestCase):
     def invoke(self, arguments, forbid_api=False):
         api_patch = (patch.object(pipeline, 'Client', side_effect=AssertionError('No API expected'))
                      if forbid_api else patch.object(pipeline, 'Client', return_value=self.client))
-        with api_patch, patch.object(settings, 'ROOT', self.root), patch.object(pipeline, 'load_env'), \
+        with api_patch, patch.object(settings, 'ROOT', self.root), patch.object(query, 'load_env'), \
              patch.object(pipeline, 'emit'), patch.object(query, '_output_path', return_value=self.output), \
              contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             return cli.main(arguments)
@@ -176,14 +182,16 @@ class QueryEvaluationCliTests(unittest.TestCase):
 
         def wrong_first_answer(messages, progress=None):
             content, meta = original_complete(messages, progress)
-            payload = json.loads(content)
-            payload['answers'][0]['answer'] = '99 единиц'
-            return json.dumps(payload, ensure_ascii=False), meta
+            if len(self.requests) == 1:
+                answer = json.loads(content)
+                answer['answer'] = '99 единиц'
+                content = json.dumps(answer, ensure_ascii=False)
+            return content, meta
 
         self.client.complete = wrong_first_answer
         result = self.invoke(self.arguments() + ['--mode', 'baseline', '--evaluate'])
         self.assertEqual(result, 0)
-        self.assertEqual(len(self.requests), 1)
+        self.assertEqual(len(self.requests), 5)
         self.assertEqual(self.read_json(self.output / 'manifest.json')['mode'], 'baseline')
         self.assertEqual(self.read_json(self.output / 'answers.json')[0]['answer'], '99 единиц')
         assessed = self.read_json(self.output / 'evaluation.json')

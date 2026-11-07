@@ -27,7 +27,7 @@ class CliEntrypointTests(unittest.TestCase):
 
     def invoke(self, *arguments):
         environment = dict(os.environ, PYTHONIOENCODING='utf-8', NO_COLOR='1')
-        environment.pop('ITFEST_API_KEY', None)
+        environment.pop('API_KEY', None)
         return subprocess.run(
             [sys.executable, '-m', 'src', *arguments],
             cwd=self.root, env=environment, capture_output=True,
@@ -50,7 +50,7 @@ class CliEntrypointTests(unittest.TestCase):
             with self.subTest(command=command):
                 result = self.invoke(command)
                 self.assertEqual(result.returncode, 2)
-                self.assertNotIn('ITFEST_API_KEY', result.stderr)
+                self.assertNotIn('API_KEY', result.stderr)
                 self.assertNotIn('Traceback', result.stderr)
 
 

@@ -11,9 +11,10 @@ import re
 from src.workflows import pipeline
 from src import settings
 from src.progress import emit
-from src.settings import CONTEXT_TOKEN_LIMIT, QueryOptions, RunOptions
+from src.settings import QueryOptions, RunOptions
 from src.files.input_loader import MAX_QUESTIONS, MAX_QUESTION_CHARS, load_documents, load_questions
-from src.generation.client import estimate_request_tokens
+from src.generation.answer_engine import question_batches
+from src.generation.client import estimate_request_tokens, load_env
 from src.generation.prompts import messages
 
 
@@ -61,15 +62,21 @@ def _run_batch(args: QueryOptions, loaded, values):
                  (len(plan['matches']), plan['package']))
     # Используем ту же консервативную оценку контекста, что и API-клиент. Большой
     # набор отклоняется до запроса, а не урезается скрытно до удобного размера.
-    payload = messages(args.mode, loaded['documents'], rows, loaded['read_errors'])
-    if estimate_request_tokens(payload, args.max_tokens) > CONTEXT_TOKEN_LIMIT:
-        raise ValueError('Набор слишком большой для текущего полного контекста 128k. Выберите меньше документов или вопросов; файлы автоматически не обрезаются.')
-    output = _output_path()
-    options = RunOptions(mode=args.mode, output=output, repair_attempts=args.repair_attempts,
-                         max_tokens=args.max_tokens, timeout=args.timeout)
+    load_env(settings.ROOT / '.env')
+    batch_limit = settings.question_batch_limit(args.mode)
+    options = RunOptions.from_env(args.mode, _output_path(), repair_attempts=args.repair_attempts,
+                                  max_tokens=args.max_tokens, timeout=args.timeout)
+    for batch in question_batches(rows, batch_limit):
+        payload = messages(args.mode, loaded['documents'], batch, loaded['read_errors'])
+        estimate = estimate_request_tokens(payload, options.max_tokens)
+        if estimate > options.context_token_limit:
+            raise ValueError(f'Оценка размера группы ({estimate}) превышает '
+                             f'CONTEXT_TOKEN_LIMIT={options.context_token_limit}. '
+                             'Сократите вопросы или объём документов.')
+    output = options.output
     package_data = {'INPUT': (loaded['documents'], loaded['read_errors'])}
     source_metadata = {'sources': loaded['sources'], 'skipped': loaded['skipped']}
-    code = pipeline.run_groups(options, rows, package_data, source_metadata=source_metadata)
+    code = pipeline.run_groups(options, rows, package_data, source_metadata=source_metadata, batch_limit=batch_limit)
     if args.evaluate:
         from src.evaluation.query_evaluation import evaluate_query_run
         from src.reporting.report import write_run_report

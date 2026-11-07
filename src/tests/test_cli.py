@@ -199,6 +199,23 @@ class CliTests(unittest.TestCase):
         self.assertTrue(any('75' in error for error in errors))
         self.assertTrue(any(event.get('event') == 'validation' and event['errors'] for event in self.events))
 
+    def test_verified_correction_gets_exact_source_for_near_match(self):
+        filename = 'notice.txt'
+        quote = 'Участник должен иметь лицензию на деятельность по технической защите конфиденциальной информации.'
+        answer = {'id': 'P01-01', 'status': 'ответ', 'answer': 'Лицензия на техническую защиту информации'}
+        wrong = {**answer, 'evidence': [
+            {'file': filename, 'quote': 'на деятельность по технической защиты конфиденциальной информации.'}]}
+        corrected = {**answer, 'evidence': [{'file': filename, 'quote': quote}]}
+        client = FakeClient(self.response(wrong), self.response(corrected))
+
+        answers = self.process(client, questions=self.questions[:1], documents={filename: quote}, attempts=1)
+
+        self.assertEqual(len(client.calls), 2)
+        correction = json.loads(client.calls[1][1]['content'])['previous_answers_and_validation_errors'][0]
+        self.assertIn('цитата не найдена', correction['errors'][0])
+        self.assertIn(quote, correction['errors'][0])
+        self.assertEqual(answers['P01-01'], corrected)
+
     def test_missing_id_is_retried_then_fails_closed(self):
         client = FakeClient(self.response(self.answer()), self.response())
         answers = self.process(client, attempts=1)
@@ -234,45 +251,51 @@ class CliTests(unittest.TestCase):
         self.assertTrue(any(event.get('event') == 'api_error' for event in self.events))
 
     def test_requests_are_capped_for_arbitrary_question_counts_in_both_modes(self):
-        for mode in ('baseline', 'verified'):
+        for mode, limit in (('baseline', 1), ('verified', 5)):
             for count in (1, 5, 6, 10, 13, 21):
                 with self.subTest(mode=mode, count=count):
                     self.events.clear()
-                    questions = [{'id': 'custom-%s' % i, 'question': 'Срок?'} for i in range(count)]
-                    groups = [questions[i:i + 5] for i in range(0, count, 5)]
-                    client = FakeClient(*(self.response(*(self.answer(q['id']) for q in group))
-                                          for group in groups))
+                    questions = [{'id': 'custom-%s' % i, 'question': 'Какой срок для этапа %s?' % i}
+                                 for i in range(count)]
+                    groups = [questions[i:i + limit] for i in range(0, count, limit)]
+                    if mode == 'baseline':
+                        reply = json.dumps({'status': 'ответ', 'answer': '30 дней', 'quote': '', 'file': ''})
+                        client = FakeClient(*([reply] * count))
+                    else:
+                        client = FakeClient(*(self.response(*(self.answer(q['id']) for q in group))
+                                              for group in groups))
                     answers = self.process(client, mode=mode, questions=questions)
                     payloads = [json.loads(call[1]['content']) for call in client.calls]
-                    self.assertEqual([len(p['questions']) for p in payloads], [len(g) for g in groups])
-                    self.assertEqual([q['id'] for p in payloads for q in p['questions']],
-                                     [q['id'] for q in questions])
+                    if mode == 'baseline':
+                        self.assertEqual([p['question'] for p in payloads], [q['question'] for q in questions])
+                        self.assertTrue(all(p.keys() == {'documents', 'question'} for p in payloads))
+                    else:
+                        self.assertEqual([len(p['questions']) for p in payloads], [len(g) for g in groups])
+                        self.assertEqual([q['id'] for p in payloads for q in p['questions']],
+                                         [q['id'] for q in questions])
                     self.assertEqual(list(answers), [q['id'] for q in questions])
                     self.assertTrue(all(a['status'] == 'ответ' for a in answers.values()))
                     for payload in payloads:
                         self.assertEqual(payload['documents'], [{'file': name, 'text': text}
                                                                for name, text in self.documents.items()])
                     plans = [e for e in self.events if e.get('event') == 'batch_plan']
-                    self.assertEqual(len(plans), int(count > 5))
+                    self.assertEqual(len(plans), int(count > limit))
                     if plans:
                         self.assertEqual(plans[0]['sizes'], [len(g) for g in groups])
 
-    def test_truncation_splits_questions_in_both_modes_and_keeps_documents(self):
-        for mode in ('baseline', 'verified'):
-            with self.subTest(mode=mode):
-                self.events.clear()
-                client = FakeClient(ResponseTruncated('limit'), self.response(self.answer()),
-                                    self.response(self.answer('P01-02')))
-                answers = self.process(client, mode=mode)
-                self.assertEqual(set(answers), {'P01-01', 'P01-02'})
-                self.assertTrue(all(a['status'] == 'ответ' for a in answers.values()))
-                payloads = [json.loads(call[1]['content']) for call in client.calls]
-                self.assertEqual([[q['id'] for q in p['questions']] for p in payloads],
-                                 [['P01-01', 'P01-02'], ['P01-01'], ['P01-02']])
-                for payload in payloads[1:]:
-                    self.assertEqual(payload['documents'], payloads[0]['documents'])
-                self.assertEqual(len([e for e in self.events if e.get('event') == 'batch_split']), 1)
-                self.assertEqual({e['batch'] for e in self.events}, {'root', 'root.1', 'root.2'})
+    def test_truncation_splits_verified_questions_and_keeps_documents(self):
+        client = FakeClient(ResponseTruncated('limit'), self.response(self.answer()),
+                            self.response(self.answer('P01-02')))
+        answers = self.process(client)
+        self.assertEqual(set(answers), {'P01-01', 'P01-02'})
+        self.assertTrue(all(a['status'] == 'ответ' for a in answers.values()))
+        payloads = [json.loads(call[1]['content']) for call in client.calls]
+        self.assertEqual([[q['id'] for q in p['questions']] for p in payloads],
+                         [['P01-01', 'P01-02'], ['P01-01'], ['P01-02']])
+        for payload in payloads[1:]:
+            self.assertEqual(payload['documents'], payloads[0]['documents'])
+        self.assertEqual(len([e for e in self.events if e.get('event') == 'batch_split']), 1)
+        self.assertEqual({e['batch'] for e in self.events}, {'root', 'root.1', 'root.2'})
 
     def test_split_during_repair_preserves_answers_and_remaining_budget(self):
         # Деление на последнем исправлении не разрешает дополнительные исправления.
@@ -326,16 +349,17 @@ class CliTests(unittest.TestCase):
         self.assertTrue(all(answer['error_type'] == 'input_read' for answer in answers.values()))
 
     def test_baseline_does_not_validate_repair_or_recompute(self):
-        wrong = self.answer(value='999999 руб.')
-        wrong['evidence'] = [{'file': 'fake.txt', 'quote': 'Вымышленная цитата'}]
-        wrong['calculation'] = {'operation': 'percent', 'base': '100', 'rate': '5'}
-        client = FakeClient(self.response(wrong))
-        with patch.object(answer_engine, 'validate_answer', side_effect=AssertionError('Baseline must not validate')):
+        wrong = {'status': 'ответ', 'answer': '999999 руб.', 'file': 'fake.txt', 'quote': 'Вымышленная цитата'}
+        malformed = {**wrong, 'answer': 999999}
+        client = FakeClient(json.dumps(wrong), json.dumps(malformed))
+        with patch.object(answer_engine, 'validate_answer', side_effect=AssertionError('Baseline must not validate')), \
+             patch.object(answer_engine, 'calculate', side_effect=AssertionError('Baseline must not calculate')):
             answers = self.process(client, mode='baseline', attempts=3)
-        self.assertEqual(len(client.calls), 1)
+        self.assertEqual(len(client.calls), 2)
         self.assertEqual(answers['P01-01']['answer'], '999999 руб.')
         self.assertEqual(answers['P01-01']['evidence'][0]['file'], 'fake.txt')
         self.assertEqual(answers['P01-02']['status'], 'не знаю')
+        self.assertEqual(answers['P01-02']['error_type'], 'model_format')
 
 
 if __name__ == '__main__':

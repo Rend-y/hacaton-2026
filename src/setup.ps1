@@ -7,7 +7,7 @@ $environmentPath = Join-Path $projectRoot '.venv'
 $environmentPython = Join-Path $environmentPath 'Scripts/python.exe'
 
 if (-not (Test-Path -LiteralPath $environmentPython)) {
-  $basePython = $env:ITFEST_PYTHON
+  $basePython = $env:PYTHON_EXECUTABLE
   if (-not $basePython) {
     $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
     if ($pythonCommand -and $pythonCommand.Source -notlike '*Microsoft\WindowsApps*') {
@@ -18,7 +18,7 @@ if (-not (Test-Path -LiteralPath $environmentPython)) {
     $bundledPython = 'C:/Program Files/WindowsApps/OpenAI.CodexPrimaryRuntime.v26-1104-2876-0_26.1104.2876.0_x64__3k8sg7r9htsxt/dependencies/python/python.exe'
     if (Test-Path -LiteralPath $bundledPython) { $basePython = $bundledPython }
   }
-  if (-not $basePython) { throw 'Установите Python 3.10+ либо задайте ITFEST_PYTHON.' }
+  if (-not $basePython) { throw 'Установите Python 3.10+ либо задайте PYTHON_EXECUTABLE.' }
   & $basePython -m venv $environmentPath
   if ($LASTEXITCODE -ne 0) { throw 'Не удалось создать .venv.' }
 }
@@ -38,7 +38,7 @@ if (-not (Test-Path -LiteralPath $configPath)) {
   Copy-Item -LiteralPath (Join-Path $projectRoot '.env.example') -Destination $configPath
   Write-Output 'Создан .env: укажите в нём API-ключ для генерации.'
 }
-Write-Output 'Готово. Справка: .\src\run.ps1 --help'
-if ($env:ITFEST_PYTHON -and $env:ITFEST_PYTHON -ne $environmentPython) {
-  Write-Output 'ITFEST_PYTHON задан явно и имеет приоритет. Чтобы использовать .venv, удалите эту переменную из текущего окружения.'
+Write-Output 'Готово. Справка: .\run.ps1 --help'
+if ($env:PYTHON_EXECUTABLE -and $env:PYTHON_EXECUTABLE -ne $environmentPython) {
+  Write-Output 'PYTHON_EXECUTABLE задан явно и имеет приоритет. Чтобы использовать .venv, удалите эту переменную из текущего окружения.'
 }

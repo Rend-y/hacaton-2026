@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, localcontext
+from difflib import get_close_matches
 from typing import Any
 
 
@@ -29,6 +30,14 @@ def norm(text: str) -> str:
     text = re.sub(r'[«»„“”"\']', '"', text)
     text = re.sub(r'[–—−]', '-', text)
     return re.sub(r'\s+', ' ', text).strip()
+
+
+def _quote_hint(normalized_quote: str, document: str) -> str | None:
+    """Найти одну похожую строку для подсказки, сохранив исходный текст."""
+    lines = (line.strip() for line in document.splitlines())
+    candidates = {norm(line): line for line in lines if 8 <= len(line) <= 350}
+    matches = get_close_matches(normalized_quote, candidates, n=2, cutoff=0.7)
+    return candidates[matches[0]] if len(matches) == 1 else None
 
 
 def _decimal(value: Any) -> Decimal | None:
@@ -160,12 +169,18 @@ def validate_answer(answer: dict, docs: dict[str, str], read_errors: list[str] |
         if not isinstance(filename, str) or filename not in docs:
             errors.append(f'{label}: файл не найден в текущей закупке.')
             continue
-        if not isinstance(quote, str) or len(norm(quote)) < 8:
+        normalized_quote = norm(quote) if isinstance(quote, str) else ''
+        if len(normalized_quote) < 8:
             errors.append(f'{label}: дословная цитата должна содержать не менее 8 символов после нормализации.')
             continue
         # Сначала проверяем принадлежность цитаты файлу, затем используем её числа.
-        if norm(quote) not in norm(docs[filename]):
-            errors.append(f'{label}: цитата не найдена в указанном файле {filename}.')
+        document = docs[filename]
+        if normalized_quote not in norm(document):
+            error = f'{label}: цитата не найдена в указанном файле {filename}.'
+            hint = _quote_hint(normalized_quote, document)
+            if hint:
+                error += f' Похожий фрагмент из файла: {hint!r}. Если он подтверждает ответ, скопируй его дословно.'
+            errors.append(error)
             continue
         valid_evidence.append(quote)
         evidence_files.add(filename)

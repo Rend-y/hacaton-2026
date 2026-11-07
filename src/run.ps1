@@ -1,7 +1,7 @@
-﻿# Запускает CLI из локального окружения; явный ITFEST_PYTHON имеет приоритет.
+﻿# Запускает CLI из локального окружения; явный PYTHON_EXECUTABLE имеет приоритет.
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$pythonPath = $env:ITFEST_PYTHON
+$pythonPath = $env:PYTHON_EXECUTABLE
 if (-not $pythonPath) {
   $projectPython = Join-Path $projectRoot '.venv/Scripts/python.exe'
   if (Test-Path -LiteralPath $projectPython) { $pythonPath = $projectPython }
@@ -17,7 +17,7 @@ if (-not $pythonPath) {
   if (Test-Path -LiteralPath $bundledPython) { $pythonPath = $bundledPython }
 }
 if (-not $pythonPath) {
-  throw 'Установите Python 3.10+ и выполните .\src\setup.ps1 либо задайте ITFEST_PYTHON.'
+  throw 'Установите Python 3.10+ и выполните .\src\setup.ps1 либо задайте PYTHON_EXECUTABLE.'
 }
 $cliArguments = $args
 # Пути к данным и результатам остаются предсказуемыми при запуске из любой папки.

@@ -28,7 +28,9 @@ class FakeClient:
 
     def complete(self, messages, progress=None):
         self.calls.append(messages)
-        return json.dumps({'answers': [self.answers.pop(0)]}, ensure_ascii=False), {'usage': {}}
+        answer = self.answers.pop(0)
+        return json.dumps(answer if 'question' in json.loads(messages[1]['content']) else {'answers': [answer]},
+                          ensure_ascii=False), {'usage': {}}
 
 
 class FakeOpener:
@@ -155,10 +157,11 @@ class WorkflowLogTests(unittest.TestCase):
         self.assertIn('p02-custom', text)
 
     def test_baseline_explicitly_reports_disabled_validation(self):
-        answer = self.answer('Несуществующая цитата со сроком 12 месяцев.')
+        quote = 'Несуществующая цитата со сроком 12 месяцев.'
+        answer = {'status': 'ответ', 'answer': '12 месяцев', 'file': 'source.txt', 'quote': quote}
         result = self.process(FakeClient(answer), mode='baseline')
         text = '\n'.join(self.logs).lower()
-        self.assertEqual(result['P02-custom']['evidence'][0]['quote'], answer['evidence'][0]['quote'])
+        self.assertEqual(result['P02-custom']['evidence'][0]['quote'], quote)
         self.assertIn('baseline', text)
         self.assertRegex(text, r'без[^\n]*провер|проверк\w* отключ|не выполня')
 

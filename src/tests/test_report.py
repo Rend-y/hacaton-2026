@@ -400,7 +400,7 @@ class ReportTests(unittest.TestCase):
             return original_evaluate(run_dir, data_dir)
 
         with patch.object(pipeline, 'Client', return_value=OfflineClient()), \
-             patch.object(pipeline, 'load_env'), patch.object(cli, 'emit'), \
+             patch.object(query, 'load_env'), patch.object(cli, 'emit'), \
              patch.object(query_evaluation, 'evaluate_query_run', side_effect=evaluate_after_generation), \
              patch.object(settings, 'ROOT', self.root), patch.object(query, '_output_path', return_value=output), \
              contextlib.redirect_stdout(io.StringIO()):

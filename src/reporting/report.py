@@ -185,7 +185,9 @@ def build_run_model(run_dir: Path) -> dict:
     operations = {name: _number(stats.get(name)) for name in ('requests', 'prompt_tokens', 'completion_tokens')}
     operations.update(elapsed_seconds=_number(manifest.get('elapsed_seconds')),
                       technical_errors=technical_errors, repair_requests=repair_requests)
-    config_fields = ('model', 'mode', 'temperature', 'max_tokens', 'max_questions_per_request', 'timeout_seconds', 'workers', 'repair_attempts', 'created_at', 'input_fingerprint')
+    config_fields = ('model', 'mode', 'temperature', 'max_tokens', 'context_token_limit',
+                     'max_questions_per_request', 'timeout_seconds', 'workers', 'repair_attempts',
+                     'created_at', 'input_fingerprint')
     run = {'label': 'Текущий запуск', 'mode': manifest.get('mode', ''), 'model': manifest.get('model', ''),
            'status': manifest.get('status', ''), 'n_questions': len(selected_ids), 'quality': quality,
            'operations': operations, 'config': {key: manifest[key] for key in config_fields if key in manifest},

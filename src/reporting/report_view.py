@@ -247,6 +247,7 @@ def _comparison(model):
 def _configuration(run):
     config = run.get('config') or {}
     labels = {'temperature': 'Температура', 'max_tokens': 'Лимит токенов ответа', 'workers': 'Рабочих потоков',
+              'context_token_limit': 'Лимит контекста',
               'repair_attempts': 'Разрешено исправлений', 'timeout_seconds': 'Таймаут HTTP, с',
               'max_questions_per_request': 'Максимум вопросов в запросе',
               'created_at': 'Время начала запуска', 'input_fingerprint': 'Отпечаток входных данных'}

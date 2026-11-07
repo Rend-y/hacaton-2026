@@ -50,8 +50,9 @@ class ClientTests(unittest.TestCase):
             'content': content, 'reasoning_content': 'PRIVATE REASONING MUST NOT BE RETURNED'},
             'finish_reason': finish}], 'usage': usage or {'prompt_tokens': 100, 'completion_tokens': 25}}
 
-    def make_client(self, *results):
-        client = Client(self.KEY, 'https://example.test/v1/', 'test-model', timeout=13, max_tokens=256)
+    def make_client(self, *results, **options):
+        client = Client(self.KEY, 'https://example.test/v1/', 'test-model', timeout=13, max_tokens=256,
+                        **options)
         client.opener = FakeOpener(*results)
         client.limiter = Mock()
         return client
@@ -65,21 +66,28 @@ class ClientTests(unittest.TestCase):
     def test_env_existing_process_values_win_and_unrelated_keys_are_ignored(self):
         with tempfile.TemporaryDirectory(prefix='client-test-', dir=Path(__file__).resolve().parent) as directory:
             env = Path(directory) / '.env'
-            env.write_text('# comment\nITFEST_API_KEY="file-key"\nITFEST_MODEL=from-file\nOTHER_SECRET=ignored\nINVALID_LINE\n', encoding='utf-8-sig')
-            with patch.dict(os.environ, {'ITFEST_API_KEY': 'process-key'}, clear=True):
+            env.write_text('# comment\nAPI_KEY="file-key"\nMODEL=from-file\nBASE_URL=https://example.test/v1\n'
+                           'MAX_QUESTIONS_PER_REQUEST=3\nOTHER_SECRET=ignored\nINVALID_LINE\n', encoding='utf-8-sig')
+            with patch.dict(os.environ, {'API_KEY': 'process-key'}, clear=True):
                 load_env(env)
-                self.assertEqual(os.environ['ITFEST_API_KEY'], 'process-key')
-                self.assertEqual(os.environ['ITFEST_MODEL'], 'from-file')
+                self.assertEqual(os.environ['API_KEY'], 'process-key')
+                self.assertEqual(os.environ['MODEL'], 'from-file')
+                self.assertEqual(os.environ['BASE_URL'], 'https://example.test/v1')
+                self.assertEqual(os.environ['MAX_QUESTIONS_PER_REQUEST'], '3')
                 self.assertNotIn('OTHER_SECRET', os.environ)
 
     def test_missing_env_file_is_optional(self):
         with patch.dict(os.environ, {}, clear=True):
             load_env(Path(__file__).parent / 'missing-test-env-file')
-            self.assertNotIn('ITFEST_API_KEY', os.environ)
+            self.assertNotIn('API_KEY', os.environ)
 
-    def test_client_rejects_missing_key_and_insecure_or_credential_urls(self):
-        with self.assertRaises(ValueError):
-            Client('', 'https://example.test/v1', 'model')
+    def test_client_rejects_missing_config_and_insecure_or_credential_urls(self):
+        missing = [('API_KEY', '', 'https://example.test/v1', 'model'),
+                   ('BASE_URL', self.KEY, '', 'model'),
+                   ('MODEL', self.KEY, 'https://example.test/v1', '')]
+        for field, key, url, model in missing:
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, f'Set {field} in'):
+                Client(key, url, model)
         urls = ['http://example.test/v1', 'file:///secret', 'example.test', 'https://',
                 'https://user:pass@example.test/v1', 'https://user@example.test/v1',
                 'https://example.test/v1?key=secret', 'https://example.test/v1#fragment']
@@ -198,9 +206,9 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(client.stats['requests'], 3)
 
     def test_context_guard_fails_before_any_http_request(self):
-        client = self.make_client()
-        with self.assertRaisesRegex(ApiError, '128k context guard'):
-            client.complete([{'role': 'user', 'content': 'x' * 128001}])
+        client = self.make_client(context_token_limit=300)
+        with self.assertRaisesRegex(ApiError, 'CONTEXT_TOKEN_LIMIT=300'):
+            client.complete([{'role': 'user', 'content': 'x' * 13}])
         self.assertEqual(client.opener.calls, [])
         self.assertEqual(client.stats['requests'], 0)
         client.limiter.acquire.assert_not_called()

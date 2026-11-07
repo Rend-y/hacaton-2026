@@ -9,8 +9,10 @@ import io
 import json
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
+import urllib.error
 
 from src import cli
 from src.workflows import pipeline
@@ -40,11 +42,14 @@ class OfflineClient:
         self.stats['requests'] += 1
         self.stats['prompt_tokens'] += 30
         self.stats['completion_tokens'] += 10
-        answers = [{'id': item['id'], 'status': 'ответ', 'answer': '12 месяцев',
-                    'evidence': [{'file': document['file'], 'quote': document['text']}],
-                    'reason': 'Срок указан в переданном документе.'}
-                   for item in payload['questions']]
-        return json.dumps({'answers': answers}, ensure_ascii=False), {
+        if 'question' in payload:
+            response = {'status': 'ответ', 'answer': '12 месяцев', 'file': document['file'], 'quote': document['text']}
+        else:
+            response = {'answers': [{'id': item['id'], 'status': 'ответ', 'answer': '12 месяцев',
+                                     'evidence': [{'file': document['file'], 'quote': document['text']}],
+                                     'reason': 'Срок указан в переданном документе.'}
+                                    for item in payload['questions']]}
+        return json.dumps(response, ensure_ascii=False), {
             'usage': {'prompt_tokens': 30, 'completion_tokens': 10}, 'finish_reason': 'stop'}
 
 
@@ -69,7 +74,7 @@ class QueryTests(unittest.TestCase):
         client_patch = (patch.object(pipeline, 'Client', side_effect=AssertionError('Invalid input must not call API'))
                         if forbid_api else patch.object(pipeline, 'Client', return_value=client or self.client))
         with client_patch, patch.object(query, '_output_path', return_value=self.output), \
-             patch.object(pipeline, 'load_env'), patch.object(pipeline, 'emit'), \
+             patch.object(query, 'load_env'), patch.object(pipeline, 'emit'), \
              patch.object(evaluation, 'evaluate_run', side_effect=AssertionError('Query must not load gold')), \
              contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             return cli.main(arguments)
@@ -139,6 +144,89 @@ class QueryTests(unittest.TestCase):
         self.assertEqual([item['question'] for item in self.client.calls[0]['questions']],
                          ['Первый вопрос?', 'Второй вопрос?', 'Третий вопрос?', 'Четвёртый вопрос?'])
 
+    def test_verified_uses_configured_generation_limits(self):
+        questions = ['Первый вопрос?', 'Второй вопрос?', 'Третий вопрос?']
+        with patch.dict('os.environ', {'MAX_QUESTIONS_PER_REQUEST': '2', 'TIMEOUT_SECONDS': '30.5',
+                                       'MAX_TOKENS': '640', 'CONTEXT_TOKEN_LIMIT': '10000'}):
+            result = self.invoke(self.arguments(*questions))
+
+        self.assertEqual(result, 0)
+        self.assertEqual([[item['question'] for item in call['questions']] for call in self.client.calls],
+                         [questions[:2], questions[2:]])
+        manifest = self.read_json(self.output / 'manifest.json')
+        self.assertEqual(manifest['max_questions_per_request'], 2)
+        self.assertEqual(manifest['timeout_seconds'], 30.5)
+        self.assertEqual(manifest['max_tokens'], 640)
+        self.assertEqual(manifest['context_token_limit'], 10000)
+
+    def test_invalid_settings_and_insufficient_context_fail_before_model_request(self):
+        for env in ({'MAX_QUESTIONS_PER_REQUEST': '0'}, {'TIMEOUT_SECONDS': 'nan'},
+                    {'MAX_TOKENS': '0'}, {'CONTEXT_TOKEN_LIMIT': 'abc'}, {'MAX_WORKERS': '0'},
+                    {'MAX_TOKENS': '256', 'CONTEXT_TOKEN_LIMIT': '256'},
+                    {'MAX_TOKENS': '256', 'CONTEXT_TOKEN_LIMIT': '300'}):
+            with self.subTest(env=env), patch.dict('os.environ', env):
+                result = self.invoke(self.arguments('Вопрос?'), forbid_api=True)
+
+                self.assertEqual(result, 1)
+                self.assertFalse(self.output.exists())
+
+    def test_workers_overlap_batches_with_separate_transports_and_keep_output_order(self):
+        first_two = threading.Barrier(2)
+        third_started = threading.Event()
+        lock = threading.Lock()
+        transports = []
+        active = peak = 0
+        test = self
+
+        class OfflineTransport:
+            def __init__(self, *_handlers):
+                self.worker = threading.current_thread()
+                with lock:
+                    transports.append(self)
+
+            def open(self, request, timeout):
+                nonlocal active, peak
+                test.assertIs(threading.current_thread(), self.worker)
+                messages = json.loads(request.data)['messages']
+                question = json.loads(messages[1]['content'])['questions'][0]
+                question_id = question['id']
+                with lock:
+                    active += 1
+                    peak = max(peak, active)
+                try:
+                    if question_id in ('INPUT-001', 'INPUT-002'):
+                        first_two.wait(timeout=5)
+                    if question_id == 'INPUT-001':
+                        test.assertTrue(third_started.wait(timeout=5))
+                    if question_id == 'INPUT-003':
+                        third_started.set()
+                        raise urllib.error.HTTPError(request.full_url, 400, 'offline failure', {}, io.BytesIO())
+                    answer = {'id': question_id, 'status': 'не знаю'}
+                    return io.BytesIO(json.dumps({'choices': [{'finish_reason': 'stop',
+                        'message': {'content': json.dumps({'answers': [answer]})}}]}).encode('utf-8'))
+                finally:
+                    with lock:
+                        active -= 1
+
+        env = {'MAX_WORKERS': '2', 'MAX_QUESTIONS_PER_REQUEST': '1', 'API_KEY': 'test-key',
+               'BASE_URL': 'https://example.test/v1', 'MODEL': 'offline-model'}
+        with patch.dict('os.environ', env), patch.object(query, 'load_env'), \
+             patch.object(query, '_output_path', return_value=self.output), \
+             patch('src.generation.client.urllib.request.build_opener', side_effect=OfflineTransport), \
+             contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            result = cli.main(self.arguments('Первый?', 'Второй?', 'Третий?', 'Четвёртый?'))
+
+        self.assertEqual(result, 2)
+        self.assertEqual(peak, 2)
+        self.assertEqual(len(transports), 2)
+        answers = self.read_json(self.output / 'answers.json')
+        self.assertEqual([answer['id'] for answer in answers], [f'INPUT-{i:03d}' for i in range(1, 5)])
+        self.assertEqual([answer.get('error_type') for answer in answers], [None, None, 'api', None])
+        manifest = self.read_json(self.output / 'manifest.json')
+        self.assertEqual(manifest['workers'], 2)
+        self.assertEqual(manifest['stats']['requests'], 4)
+        self.assertEqual(manifest['stats']['successful_requests'], 3)
+
     def test_literal_question_with_date_or_filename_is_not_mistaken_for_path(self):
         questions = ['Какая гарантия действует на 01/11/2026?', 'Что указано в Договор.txt?']
         result = self.invoke(self.arguments(*questions))
@@ -148,7 +236,7 @@ class QueryTests(unittest.TestCase):
     def test_gold_and_environment_file_are_not_sent_to_model(self):
         marker = 'SYNTHETIC_GOLD_MUST_NOT_ENTER_PROMPT'
         (self.documents / 'answers_public.json').write_text(json.dumps({'secret_answer': marker}), encoding='utf-8')
-        (self.documents / '.env').write_text('ITFEST_API_KEY=DO_NOT_READ_THIS_SENTINEL', encoding='utf-8')
+        (self.documents / '.env').write_text('API_KEY=DO_NOT_READ_THIS_SENTINEL', encoding='utf-8')
         result = self.invoke(self.arguments('Какой срок?'))
         self.assertEqual(result, 0)
         serialized = json.dumps(self.client.calls, ensure_ascii=False)
@@ -186,7 +274,7 @@ class QueryTests(unittest.TestCase):
         self.assertEqual(result, 1)
         self.assertEqual(previous.read_text(encoding='utf-8'), 'previous-result')
 
-    def test_mode_defaults_to_verified_and_baseline_selects_original_prompt(self):
+    def test_mode_defaults_to_verified_and_baseline_selects_flat_prompt(self):
         from src.generation.prompts import BASELINE, VERIFIED
         result = self.invoke(self.arguments('Вопрос?'))
         self.assertEqual(result, 0)
@@ -194,10 +282,15 @@ class QueryTests(unittest.TestCase):
         self.assertEqual(self.client.system_prompts, [VERIFIED])
         self.output = self.root / 'baseline-result'
         baseline = OfflineClient()
-        result = self.invoke(self.arguments('Вопрос?') + ['--mode', 'baseline'], client=baseline)
+        with patch.dict('os.environ', {'MAX_QUESTIONS_PER_REQUEST': '2'}):
+            result = self.invoke(self.arguments('Вопрос?') + ['--mode', 'baseline'], client=baseline)
         self.assertEqual(result, 0)
-        self.assertEqual(self.read_json(self.output / 'manifest.json')['mode'], 'baseline')
+        manifest = self.read_json(self.output / 'manifest.json')
+        self.assertEqual(manifest['mode'], 'baseline')
+        self.assertEqual(manifest['max_questions_per_request'], 1)
         self.assertEqual(baseline.system_prompts, [BASELINE])
+        self.assertEqual(baseline.calls[0]['question'], 'Вопрос?')
+        self.assertEqual(self.read_json(self.output / 'answers.json')[0]['answer'], '12 месяцев')
 
     def test_query_requires_both_inputs_and_shows_mode_and_evaluation(self):
         # Справка — пользовательский контракт: лишние режимы ввода больше не нужны.

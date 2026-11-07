@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from src.progress import heartbeat
-from src.settings import CONTEXT_TOKEN_LIMIT, DEFAULT_MAX_TOKENS, DEFAULT_TIMEOUT_SECONDS
+from src.settings import DEFAULT_CONTEXT_TOKEN_LIMIT, DEFAULT_MAX_TOKENS, DEFAULT_TIMEOUT_SECONDS
 
 
 def estimate_request_tokens(messages, max_tokens):
@@ -23,16 +23,19 @@ def estimate_request_tokens(messages, max_tokens):
 
 
 def load_env(path):
-    """Читает локальный .env, не заменяя уже заданные переменные окружения."""
-    if not Path(path).exists():
+    """Загружает настройки генерации из .env с приоритетом окружения процесса."""
+    path = Path(path)
+    if not path.exists():
         return
-    for line in Path(path).read_text(encoding='utf-8-sig').splitlines():
+    for line in path.read_text(encoding='utf-8-sig').splitlines():
         line = line.strip()
         if not line or line.startswith('#'):
             continue
         key, sep, value = line.partition('=')
-        if sep and key.strip().startswith('ITFEST_'):
-            os.environ.setdefault(key.strip(), value.strip().strip('\"\''))
+        key = key.strip()
+        if sep and key in ('BASE_URL', 'MODEL', 'API_KEY', 'TIMEOUT_SECONDS', 'MAX_TOKENS',
+                           'CONTEXT_TOKEN_LIMIT', 'MAX_QUESTIONS_PER_REQUEST', 'MAX_WORKERS'):
+            os.environ.setdefault(key, value.strip().strip('\"\''))
 
 
 class ApiError(RuntimeError):
@@ -79,23 +82,45 @@ class RateLimiter:
 
 class Client:
     """Выполняет запросы к /chat/completions и повторяет только временные сбои."""
-    def __init__(self, key, base_url, model, timeout=DEFAULT_TIMEOUT_SECONDS, max_tokens=DEFAULT_MAX_TOKENS):
+    def __init__(self, key, base_url, model, timeout=DEFAULT_TIMEOUT_SECONDS, max_tokens=DEFAULT_MAX_TOKENS,
+                 *, context_token_limit=DEFAULT_CONTEXT_TOKEN_LIMIT, max_workers=2):
         if not key:
-            raise ValueError('Set ITFEST_API_KEY in .env or the environment')
+            raise ValueError('Set API_KEY in .env or the environment')
+        if not base_url:
+            raise ValueError('Set BASE_URL in .env or the environment')
         parsed = urlparse(base_url)
         if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
-            raise ValueError('ITFEST_BASE_URL must be an HTTPS URL without credentials or query parameters')
+            raise ValueError('BASE_URL must be an HTTPS URL without credentials or query parameters')
+        if not model:
+            raise ValueError('Set MODEL in .env or the environment')
         self.key = key
         self.base_url = base_url.rstrip('/')
         self.model = model
         self.timeout = timeout
         self.max_tokens = max_tokens
+        self.context_token_limit = context_token_limit
         self.limiter = RateLimiter()
-        self.semaphore = threading.BoundedSemaphore(2)
+        self.semaphore = threading.BoundedSemaphore(max_workers)
         self.lock = threading.Lock()
-        self.stats = {'requests': 0, 'successful_requests': 0, 'prompt_tokens': 0,
-                      'completion_tokens': 0, 'http_retries': 0}
-        self.opener = urllib.request.build_opener(NoRedirect())
+        self._stats = {'requests': 0, 'successful_requests': 0, 'prompt_tokens': 0,
+                       'completion_tokens': 0, 'http_retries': 0}
+        self._transport = threading.local()
+
+    @property
+    def opener(self):
+        """Создаёт HTTP-транспорт для текущего потока при первом обращении."""
+        if not hasattr(self._transport, 'opener'):
+            self._transport.opener = urllib.request.build_opener(NoRedirect())
+        return self._transport.opener
+
+    @opener.setter
+    def opener(self, value):
+        self._transport.opener = value
+
+    @property
+    def stats(self):
+        with self.lock:
+            return self._stats.copy()
 
     def complete(self, messages, progress=None):
         """Возвращает текст ответа и расход токенов; рассуждения провайдера исключены."""
@@ -104,8 +129,8 @@ class Client:
                 progress({'event': event, **fields})
 
         estimate = estimate_request_tokens(messages, self.max_tokens)
-        if estimate > CONTEXT_TOKEN_LIMIT:
-            raise ApiError('Package is too large for the conservative 128k context guard; split documents before running')
+        if estimate > self.context_token_limit:
+            raise ApiError(f'Estimated request size {estimate} exceeds CONTEXT_TOKEN_LIMIT={self.context_token_limit}')
         payload = {'model': self.model, 'messages': messages, 'temperature': 0,
                    'max_tokens': self.max_tokens}
         body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
@@ -114,7 +139,7 @@ class Client:
             self.limiter.acquire(estimate, progress=progress)
             with self.semaphore:
                 with self.lock:
-                    self.stats['requests'] += 1
+                    self._stats['requests'] += 1
                 request = urllib.request.Request(self.base_url + '/chat/completions', data=body,
                     headers={'Authorization': 'Bearer ' + self.key, 'Content-Type': 'application/json'})
                 report('api_request', http_attempt=attempt + 1, timeout_seconds=self.timeout)
@@ -129,9 +154,9 @@ class Client:
                     content = choice['message'].get('content')
                     usage = data.get('usage') or {}
                     with self.lock:
-                        self.stats['successful_requests'] += 1
+                        self._stats['successful_requests'] += 1
                         for field in ('prompt_tokens', 'completion_tokens'):
-                            self.stats[field] += int(usage.get(field) or 0)
+                            self._stats[field] += int(usage.get(field) or 0)
                     if choice.get('finish_reason') == 'length':
                         raise ResponseTruncated('Model response truncated: output token limit reached')
                     if not isinstance(content, str) or not content.strip():
@@ -159,7 +184,7 @@ class Client:
                 except (KeyError, IndexError, TypeError, ValueError, AttributeError):
                     raise ApiError('Model API returned an invalid completion envelope') from None
             with self.lock:
-                self.stats['http_retries'] += 1
+                self._stats['http_retries'] += 1
             delay = max(retry_after, 2 ** (attempt + 1))
             report('api_retry', wait_seconds=delay, next_http_attempt=attempt + 2)
             time.sleep(delay)

@@ -3,6 +3,7 @@
 Этот слой не читает датасеты, не разбирает CLI и не выбирает папки по имени.
 Каждая группа документов передаётся только связанным с ней вопросам.
 """
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -11,19 +12,17 @@ from pathlib import Path
 import threading
 import time
 
-from src.generation.answer_engine import process_questions
+from src.generation.answer_engine import log_batch_plan, process_questions, question_batches
 from src.generation.answers import abstain
-from src.generation.client import Client, load_env
+from src.generation.client import Client
 from src.progress import RunLog, emit
 from src.generation.prompts import BASELINE, VERIFIED
 from src.files.run_storage import save_answers, write_json
 from src.settings import RunOptions
-from src import settings
 
 
-def run_groups(options: RunOptions, questions, package_data, source_metadata=None) -> int:
+def run_groups(options: RunOptions, questions, package_data, source_metadata=None, *, batch_limit: int) -> int:
     """Сохраняет снимок, выполняет запрос с проверками и формирует локальный отчёт."""
-    load_env(settings.ROOT / '.env')
     grouped = {}
     for question in questions:
         grouped.setdefault(question['package'], []).append(question)
@@ -41,11 +40,9 @@ def run_groups(options: RunOptions, questions, package_data, source_metadata=Non
         raise ValueError('mode must be baseline or verified')
     if not 0 <= options.repair_attempts <= 3:
         raise ValueError('repair-attempts must be 0–3')
-    if not 256 <= options.max_tokens <= 32768 or options.timeout <= 0:
-        raise ValueError('max-tokens must be 256–32768 and timeout must be positive')
-    client = Client(os.environ.get('ITFEST_API_KEY', ''),
-                    os.environ.get('ITFEST_BASE_URL', 'https://ai.on-soft.ru/v1'),
-                    os.environ.get('ITFEST_MODEL', 'qwen3-6-practice'), options.timeout, options.max_tokens)
+    client = Client(os.environ.get('API_KEY', ''), os.environ.get('BASE_URL', ''),
+                    os.environ.get('MODEL', ''), options.timeout, options.max_tokens,
+                    context_token_limit=options.context_token_limit, max_workers=options.max_workers)
     output.mkdir(parents=True, exist_ok=True)
     progress = RunLog(output / 'progress.log', emit, secrets=(client.key,))
     write_json(output / 'inputs.json', input_data)
@@ -61,32 +58,58 @@ def run_groups(options: RunOptions, questions, package_data, source_metadata=Non
 
     started = time.monotonic()
     manifest = {'model': client.model, 'base_url': client.base_url, 'mode': options.mode, 'temperature': 0,
-                'max_tokens': options.max_tokens, 'input_fingerprint': fingerprint, 'timeout_seconds': options.timeout,
+                'max_tokens': options.max_tokens, 'context_token_limit': options.context_token_limit,
+                'input_fingerprint': fingerprint, 'timeout_seconds': options.timeout,
                 'question_ids': [q['id'] for q in questions], 'created_at': datetime.now(timezone.utc).isoformat(),
                 'repair_attempts': options.repair_attempts if options.mode == 'verified' else 0,
-                'max_questions_per_request': settings.MAX_QUESTIONS_PER_REQUEST,
-                'workers': 1, 'status': 'running', 'stats': dict(client.stats)}
+                'max_questions_per_request': batch_limit,
+                'workers': options.max_workers, 'status': 'running', 'stats': dict(client.stats)}
     write_json(output / 'manifest.json', manifest)
-    progress('Старт: режим %s; модель %s; вопросов %s; документов %s.' %
-             (options.mode, client.model, len(questions), sum(len(pair[0]) for pair in package_data.values())))
+    progress('Старт: режим %s; модель %s; вопросов %s; документов %s; максимум потоков %s.' %
+             (options.mode, client.model, len(questions), sum(len(pair[0]) for pair in package_data.values()),
+              options.max_workers))
     progress('Входные данные и промпты сохранены. Эталоны не загружались; журнал этапов: ' + str(output / 'progress.log'))
     answers = {}
-    for name, rows in grouped.items():
+
+    def process_batch(name, rows, batch='root'):
         documents, read_errors = package_data[name]
         try:
-            answers.update(process_questions(client, options.mode, name, rows, documents,
-                                            read_errors, options.repair_attempts, trace, progress))
+            return process_questions(client, options.mode, name, rows, documents,
+                                     read_errors, options.repair_attempts, trace, progress,
+                                     batch_limit=batch_limit, _batch=batch)
         except Exception as exc:
-            # Сбой одной группы не теряет ответы других; отказ отмечается техническим.
             reason = 'Internal input failure: ' + type(exc).__name__
-            trace({'package': name, 'event': 'internal_error', 'error': reason})
-            progress('[%s] Внутренняя ошибка: %s.' % (name, reason))
-            answers.update({q['id']: {**abstain(q, reason), 'error_type': 'internal'} for q in rows})
+            trace({'package': name, 'batch': batch, 'event': 'internal_error', 'error': reason})
+            progress('[%s/%s] Внутренняя ошибка: %s.' % (name, batch, reason))
+            return {q['id']: {**abstain(q, reason), 'error_type': 'internal'} for q in rows}
+
+    def save_progress(result):
+        answers.update(result)
         save_answers(output, questions, answers)
         manifest.update(completed_questions=len(answers), stats=dict(client.stats),
                         elapsed_seconds=round(time.monotonic() - started, 3))
         write_json(output / 'manifest.json', manifest)
         progress('Общий результат сохранён: %s/%s вопросов.' % (len(answers), len(questions)))
+
+    if options.max_workers == 1:
+        for name, rows in grouped.items():
+            save_progress(process_batch(name, rows))
+    else:
+        executor = ThreadPoolExecutor(max_workers=options.max_workers, thread_name_prefix='model-request')
+        try:
+            futures = []
+            for name, rows in grouped.items():
+                groups = question_batches(rows, batch_limit) if package_data[name][0] else [rows]
+                if len(groups) > 1:
+                    log_batch_plan(name, groups, batch_limit, trace, progress)
+                for index, batch in enumerate(groups, 1):
+                    batch_id = f'root.{index}' if len(groups) > 1 else 'root'
+                    futures.append(executor.submit(process_batch, name, batch, batch_id))
+            for future in as_completed(futures):
+                save_progress(future.result())
+        finally:
+            executor.shutdown(wait=True, cancel_futures=True)
+
     progress('Сохранены answers.csv и answers.json; готово %s/%s вопросов.' % (len(answers), len(questions)))
     failures = [answer for answer in answers.values() if answer.get('error_type')]
     manifest.update(status='completed_with_errors' if failures else 'completed',
