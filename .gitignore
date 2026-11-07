@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+.idea/
+.DS_Store
+.venv/
+__pycache__/
+*.pyc
+runs/
+comparison/

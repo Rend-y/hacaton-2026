@@ -1,0 +1,1081 @@
+[
+ {
+  "id": "P01-01",
+  "package": "P01",
+  "source": "P01",
+  "key": "nmck",
+  "question": "Какая начальная (максимальная) цена контракта, в рублях?",
+  "kind": "num",
+  "expected": [
+   1800000.0
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "Начальная (максимальная) цена контракта: 1 800 000,00 руб"
+ },
+ {
+  "id": "P01-02",
+  "package": "P01",
+  "source": "P01",
+  "key": "smp_only",
+  "question": "Установлено ли ограничение участия в пользу малого бизнеса (только СМП и СОНКО)? Ответьте да или нет.",
+  "kind": "yes",
+  "expected": [
+   "да"
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "исключительно субъекты малого предпринимательства"
+ },
+ {
+  "id": "P01-03",
+  "package": "P01",
+  "source": "P01",
+  "key": "bid_security",
+  "question": "Какой размер обеспечения заявки, в рублях?",
+  "kind": "num",
+  "expected": [
+   18000.0
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "18 000,00"
+ },
+ {
+  "id": "P01-04",
+  "package": "P01",
+  "source": "P01",
+  "key": "contract_security",
+  "question": "Какой размер обеспечения исполнения контракта, в процентах?",
+  "kind": "num",
+  "expected": [
+   5
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "5 % от цены контракта"
+ },
+ {
+  "id": "P01-05",
+  "package": "P01",
+  "source": "P01",
+  "key": "contract_security_rub",
+  "question": "Сколько рублей составит обеспечение исполнения контракта, если контракт заключат по начальной (максимальной) цене?",
+  "kind": "num",
+  "expected": [
+   90000.0
+  ],
+  "type": "расчёт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "5 % от цены контракта"
+ },
+ {
+  "id": "P01-06",
+  "package": "P01",
+  "source": "P01",
+  "key": "experience",
+  "question": "Сколько исполненных контрактов нужно для подтверждения опыта и какая минимальная цена каждого, в рублях?",
+  "kind": "num",
+  "expected": [
+   4,
+   500000
+  ],
+  "type": "после изменений",
+  "status": "ответ",
+  "file": "05_izmeneniya_izveshcheniya.txt",
+  "quote": "не менее 4 исполненных договоров"
+ },
+ {
+  "id": "P01-07",
+  "package": "P01",
+  "source": "P01",
+  "key": "execution_term",
+  "question": "Какой срок выполнения работ, в календарных днях?",
+  "kind": "num",
+  "expected": [
+   60,
+   75
+  ],
+  "type": "расхождение",
+  "status": "расхождение",
+  "file": "01_izveshchenie.txt",
+  "quote": "60 календарных дней"
+ },
+ {
+  "id": "P01-08",
+  "package": "P01",
+  "source": "P01",
+  "key": "warranty",
+  "question": "Какой гарантийный срок на результаты работ, в месяцах?",
+  "kind": "num",
+  "expected": [
+   12
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "04_proekt_kontrakta.txt",
+  "quote": "гарантию на результат сроком 12 месяцев"
+ },
+ {
+  "id": "P01-09",
+  "package": "P01",
+  "source": "P01",
+  "key": "onsite",
+  "question": "Где выполняются работы: удалённо или у заказчика? Если у заказчика, по какому адресу?",
+  "kind": "all_kw",
+  "expected": [
+   "удал"
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "03_opisanie_obekta.txt",
+  "quote": "присутствие специалистов исполнителя на территории заказчика не требуется"
+ },
+ {
+  "id": "P01-10",
+  "package": "P01",
+  "source": "P01",
+  "key": "deadline_submission",
+  "question": "До какой даты и времени принимаются заявки?",
+  "kind": "date",
+  "expected": [
+   "27.11.2026",
+   "10:00"
+  ],
+  "type": "после изменений",
+  "status": "ответ",
+  "file": "05_izmeneniya_izveshcheniya.txt",
+  "quote": "27.11.2026 10:00"
+ },
+ {
+  "id": "P01-11",
+  "package": "P01",
+  "source": "P01",
+  "key": "egrul_fresh",
+  "question": "Не старше скольких дней должна быть выписка из ЕГРЮЛ?",
+  "kind": "num",
+  "expected": [
+   30
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "02_trebovaniya_k_zayavke.txt",
+  "quote": "не ранее чем за 30 дней"
+ },
+ {
+  "id": "P01-12",
+  "package": "P01",
+  "source": "P01",
+  "key": "customer_term",
+  "question": "За сколько рабочих дней заказчик проверяет результаты работ после получения документа о приёмке?",
+  "kind": "num",
+  "expected": [
+   10
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "04_proekt_kontrakta.txt",
+  "quote": "10 (десяти) рабочих дней"
+ },
+ {
+  "id": "P01-13",
+  "package": "P01",
+  "source": "P01",
+  "key": "subcontract_smp",
+  "question": "Какой минимальный объём привлечения субподрядчиков из малого бизнеса, в процентах цены контракта?",
+  "kind": "absent",
+  "expected": [],
+  "type": "ловушка: нет в документах",
+  "status": "нет в документах",
+  "file": "",
+  "quote": ""
+ },
+ {
+  "id": "P02-01",
+  "package": "P02",
+  "source": "P02",
+  "key": "nmck",
+  "question": "Какая начальная (максимальная) цена контракта, в рублях?",
+  "kind": "num",
+  "expected": [
+   960000.0
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "Начальная (максимальная) цена контракта: 960 000,00 руб"
+ },
+ {
+  "id": "P02-02",
+  "package": "P02",
+  "source": "P02",
+  "key": "bid_security",
+  "question": "Какой размер обеспечения заявки, в рублях?",
+  "kind": "no",
+  "expected": [
+   "не требуется",
+   "не установлен",
+   "нет",
+   "не нужн",
+   "исключ",
+   "отсутств"
+  ],
+  "type": "ловушка: требования нет",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "Требование об обеспечении заявок не установлено"
+ },
+ {
+  "id": "P02-03",
+  "package": "P02",
+  "source": "P02",
+  "key": "contract_security",
+  "question": "Какой размер обеспечения исполнения контракта, в процентах?",
+  "kind": "num",
+  "expected": [
+   5
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "5 % от цены контракта"
+ },
+ {
+  "id": "P02-04",
+  "package": "P02",
+  "source": "P02",
+  "key": "contract_security_rub",
+  "question": "Сколько рублей составит обеспечение исполнения контракта, если контракт заключат по начальной (максимальной) цене?",
+  "kind": "num",
+  "expected": [
+   48000.0
+  ],
+  "type": "расчёт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "5 % от цены контракта"
+ },
+ {
+  "id": "P02-05",
+  "package": "P02",
+  "source": "P02",
+  "key": "nat_regime_software",
+  "question": "Должно ли программное обеспечение быть из реестра российского ПО? Ответьте да или нет.",
+  "kind": "yes",
+  "expected": [
+   "да"
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "реестр российского программного обеспечения"
+ },
+ {
+  "id": "P02-06",
+  "package": "P02",
+  "source": "P02",
+  "key": "execution_term",
+  "question": "Какой срок выполнения работ, в календарных днях?",
+  "kind": "num",
+  "expected": [
+   15
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "04_proekt_kontrakta.txt",
+  "quote": "15 календарных дней"
+ },
+ {
+  "id": "P02-07",
+  "package": "P02",
+  "source": "P02",
+  "key": "deadline_submission",
+  "question": "До какой даты и времени принимаются заявки?",
+  "kind": "date",
+  "expected": [
+   "20.11.2026",
+   "09:00"
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "20.11.2026"
+ },
+ {
+  "id": "P02-08",
+  "package": "P02",
+  "source": "P02",
+  "key": "warranty_security_none",
+  "question": "Требуется ли обеспечение гарантийных обязательств? Ответьте да или нет.",
+  "kind": "no",
+  "expected": [
+   "не требуется",
+   "не установлен",
+   "нет",
+   "не нужн",
+   "исключ",
+   "отсутств"
+  ],
+  "type": "ловушка: требования нет",
+  "status": "ответ",
+  "file": "04_proekt_kontrakta.txt",
+  "quote": "Обеспечение гарантийных обязательств не требуется"
+ },
+ {
+  "id": "P02-09",
+  "package": "P02",
+  "source": "P02",
+  "key": "warranty",
+  "question": "Какой гарантийный срок на результаты работ, в месяцах?",
+  "kind": "absent",
+  "expected": [],
+  "type": "ловушка: нет в документах",
+  "status": "нет в документах",
+  "file": "",
+  "quote": ""
+ },
+ {
+  "id": "P02-10",
+  "package": "P02",
+  "source": "P02",
+  "key": "egrul_fresh",
+  "question": "Не старше скольких дней должна быть выписка из ЕГРЮЛ?",
+  "kind": "absent",
+  "expected": [],
+  "type": "ловушка: нет в документах",
+  "status": "нет в документах",
+  "file": "",
+  "quote": ""
+ },
+ {
+  "id": "P03-01",
+  "package": "P03",
+  "source": "P03",
+  "key": "nmck",
+  "question": "Какая начальная (максимальная) цена контракта, в рублях?",
+  "kind": "num",
+  "expected": [
+   1100000.0
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "Начальная (максимальная) цена контракта: 1 100 000,00 руб"
+ },
+ {
+  "id": "P03-02",
+  "package": "P03",
+  "source": "P03",
+  "key": "bid_security",
+  "question": "Какой размер обеспечения заявки, в рублях?",
+  "kind": "num",
+  "expected": [
+   5500.0
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "5 500,00"
+ },
+ {
+  "id": "P03-03",
+  "package": "P03",
+  "source": "P03",
+  "key": "contract_security",
+  "question": "Какой размер обеспечения исполнения контракта, в процентах?",
+  "kind": "num",
+  "expected": [
+   10
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "10 % от цены контракта"
+ },
+ {
+  "id": "P03-04",
+  "package": "P03",
+  "source": "P03",
+  "key": "contract_security_rub",
+  "question": "Сколько рублей составит обеспечение исполнения контракта, если контракт заключат по начальной (максимальной) цене?",
+  "kind": "num",
+  "expected": [
+   110000.0
+  ],
+  "type": "расчёт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "10 % от цены контракта"
+ },
+ {
+  "id": "P03-05",
+  "package": "P03",
+  "source": "P03",
+  "key": "experience",
+  "question": "Сколько исполненных контрактов нужно для подтверждения опыта и какая минимальная цена каждого, в рублях?",
+  "kind": "num",
+  "expected": [
+   3,
+   250000
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "02_trebovaniya_k_zayavke.txt",
+  "quote": "не менее 3 (трёх) контрактов"
+ },
+ {
+  "id": "P03-06",
+  "package": "P03",
+  "source": "P03",
+  "key": "execution_term",
+  "question": "Какой срок выполнения работ, в календарных днях?",
+  "kind": "num",
+  "expected": [
+   90
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "04_proekt_kontrakta.txt",
+  "quote": "(90) календарных дней"
+ },
+ {
+  "id": "P03-07",
+  "package": "P03",
+  "source": "P03",
+  "key": "deadline_submission",
+  "question": "До какой даты и времени принимаются заявки?",
+  "kind": "date",
+  "expected": [
+   "26.11.2026",
+   "10:00"
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "26.11.2026"
+ },
+ {
+  "id": "P03-08",
+  "package": "P03",
+  "source": "P03",
+  "key": "egrul_fresh",
+  "question": "Не старше скольких дней должна быть выписка из ЕГРЮЛ?",
+  "kind": "num",
+  "expected": [
+   30
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "02_trebovaniya_k_zayavke.txt",
+  "quote": "не более 30 календарных дней"
+ },
+ {
+  "id": "P03-09",
+  "package": "P03",
+  "source": "P03",
+  "key": "warranty",
+  "question": "Какой гарантийный срок на результаты работ, в месяцах?",
+  "kind": "absent",
+  "expected": [],
+  "type": "ловушка: нет в документах",
+  "status": "нет в документах",
+  "file": "",
+  "quote": ""
+ },
+ {
+  "id": "P03-10",
+  "package": "P03",
+  "source": "P03",
+  "key": "subcontract_smp",
+  "question": "Какой минимальный объём привлечения субподрядчиков из малого бизнеса, в процентах цены контракта?",
+  "kind": "absent",
+  "expected": [],
+  "type": "ловушка: нет в документах",
+  "status": "нет в документах",
+  "file": "",
+  "quote": ""
+ },
+ {
+  "id": "P04-01",
+  "package": "P04",
+  "source": "P04",
+  "key": "nmck",
+  "question": "Какая начальная (максимальная) цена контракта, в рублях?",
+  "kind": "num",
+  "expected": [
+   2400000.0
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "Начальная (максимальная) цена контракта: 2 400 000,00 руб"
+ },
+ {
+  "id": "P04-02",
+  "package": "P04",
+  "source": "P04",
+  "key": "bid_security",
+  "question": "Какой размер обеспечения заявки, в рублях?",
+  "kind": "num",
+  "expected": [
+   24000.0
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "24 000,00"
+ },
+ {
+  "id": "P04-03",
+  "package": "P04",
+  "source": "P04",
+  "key": "contract_security",
+  "question": "Какой размер обеспечения исполнения контракта, в процентах?",
+  "kind": "num",
+  "expected": [
+   10
+  ],
+  "type": "после изменений",
+  "status": "ответ",
+  "file": "05_izmeneniya_izveshcheniya.txt",
+  "quote": "10 % от цены контракта"
+ },
+ {
+  "id": "P04-04",
+  "package": "P04",
+  "source": "P04",
+  "key": "contract_security_rub",
+  "question": "Сколько рублей составит обеспечение исполнения контракта, если контракт заключат по начальной (максимальной) цене?",
+  "kind": "num",
+  "expected": [
+   240000.0
+  ],
+  "type": "расчёт",
+  "status": "ответ",
+  "file": "05_izmeneniya_izveshcheniya.txt",
+  "quote": "10 % от цены контракта"
+ },
+ {
+  "id": "P04-05",
+  "package": "P04",
+  "source": "P04",
+  "key": "license",
+  "question": "Какие лицензии должны быть у участника?",
+  "kind": "all_kw",
+  "expected": [
+   "техническ",
+   "конфиденциальн"
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "лицензии на деятельность по технической защите конфиденциальной информации"
+ },
+ {
+  "id": "P04-06",
+  "package": "P04",
+  "source": "P04",
+  "key": "staff",
+  "question": "Сколько специалистов исполнитель обязан привлечь к работам?",
+  "kind": "num",
+  "expected": [
+   2
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "03_opisanie_obekta.txt",
+  "quote": "не менее 2 (двух) специалистов"
+ },
+ {
+  "id": "P04-07",
+  "package": "P04",
+  "source": "P04",
+  "key": "subcontract_smp",
+  "question": "Какой минимальный объём привлечения субподрядчиков из малого бизнеса, в процентах цены контракта?",
+  "kind": "num",
+  "expected": [
+   15
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "04_proekt_kontrakta.txt",
+  "quote": "не менее 15 % цены контракта"
+ },
+ {
+  "id": "P04-08",
+  "package": "P04",
+  "source": "P04",
+  "key": "execution_term",
+  "question": "Какой срок выполнения работ, в календарных днях?",
+  "kind": "num",
+  "expected": [
+   365
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "04_proekt_kontrakta.txt",
+  "quote": "(365) календарных дней"
+ },
+ {
+  "id": "P04-09",
+  "package": "P04",
+  "source": "P04",
+  "key": "onsite",
+  "question": "Где выполняются работы: удалённо или у заказчика? Если у заказчика, по какому адресу?",
+  "kind": "all_kw",
+  "expected": [
+   "Больничная"
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "03_opisanie_obekta.txt",
+  "quote": "г. Образцово, ул. Больничная, д. 2"
+ },
+ {
+  "id": "P04-10",
+  "package": "P04",
+  "source": "P04",
+  "key": "deadline_submission",
+  "question": "До какой даты и времени принимаются заявки?",
+  "kind": "date",
+  "expected": [
+   "25.11.2026",
+   "12:00"
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "25.11.2026"
+ },
+ {
+  "id": "P04-11",
+  "package": "P04",
+  "source": "P04",
+  "key": "egrul_fresh",
+  "question": "Не старше скольких дней должна быть выписка из ЕГРЮЛ?",
+  "kind": "num",
+  "expected": [
+   30
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "02_trebovaniya_k_zayavke.txt",
+  "quote": "не более 30 календарных дней"
+ },
+ {
+  "id": "P04-12",
+  "package": "P04",
+  "source": "P04",
+  "key": "fsb_negated",
+  "question": "Нужна ли участнику лицензия ФСБ России? Ответьте да или нет.",
+  "kind": "no",
+  "expected": [
+   "не требуется",
+   "не установлен",
+   "нет",
+   "не нужн",
+   "исключ",
+   "отсутств"
+  ],
+  "type": "ловушка: требования нет",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "Требование о наличии лицензии ФСБ России к участникам настоящей закупки не установлено"
+ },
+ {
+  "id": "P04-13",
+  "package": "P04",
+  "source": "P04",
+  "key": "customer_term",
+  "question": "За сколько рабочих дней заказчик проверяет результаты работ после получения документа о приёмке?",
+  "kind": "num",
+  "expected": [
+   10
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "04_proekt_kontrakta.txt",
+  "quote": "10 (десяти) рабочих дней"
+ },
+ {
+  "id": "P04-14",
+  "package": "P04",
+  "source": "P04",
+  "key": "warranty",
+  "question": "Какой гарантийный срок на результаты работ, в месяцах?",
+  "kind": "absent",
+  "expected": [],
+  "type": "ловушка: нет в документах",
+  "status": "нет в документах",
+  "file": "",
+  "quote": ""
+ },
+ {
+  "id": "P05-01",
+  "package": "P05",
+  "source": "P05",
+  "key": "nmck",
+  "question": "Какая начальная (максимальная) цена контракта, в рублях?",
+  "kind": "num",
+  "expected": [
+   1500000.0
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "Начальная (максимальная) цена контракта: 1 500 000,00 руб"
+ },
+ {
+  "id": "P05-02",
+  "package": "P05",
+  "source": "P05",
+  "key": "smp_only",
+  "question": "Установлено ли ограничение участия в пользу малого бизнеса (только СМП и СОНКО)? Ответьте да или нет.",
+  "kind": "yes",
+  "expected": [
+   "да"
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "исключительно субъекты малого предпринимательства"
+ },
+ {
+  "id": "P05-03",
+  "package": "P05",
+  "source": "P05",
+  "key": "bid_security",
+  "question": "Какой размер обеспечения заявки, в рублях?",
+  "kind": "num",
+  "expected": [
+   15000.0
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "15 000,00"
+ },
+ {
+  "id": "P05-04",
+  "package": "P05",
+  "source": "P05",
+  "key": "contract_security",
+  "question": "Какой размер обеспечения исполнения контракта, в процентах?",
+  "kind": "num",
+  "expected": [
+   5
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "5 процентов цены"
+ },
+ {
+  "id": "P05-05",
+  "package": "P05",
+  "source": "P05",
+  "key": "contract_security_rub",
+  "question": "Сколько рублей составит обеспечение исполнения контракта, если контракт заключат по начальной (максимальной) цене?",
+  "kind": "num",
+  "expected": [
+   75000.0
+  ],
+  "type": "расчёт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "5 процентов цены"
+ },
+ {
+  "id": "P05-06",
+  "package": "P05",
+  "source": "P05",
+  "key": "experience",
+  "question": "Сколько исполненных контрактов нужно для подтверждения опыта и какая минимальная цена каждого, в рублях?",
+  "kind": "num",
+  "expected": [
+   2,
+   400000
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "не менее 2 исполненных договоров"
+ },
+ {
+  "id": "P05-07",
+  "package": "P05",
+  "source": "P05",
+  "key": "execution_term",
+  "question": "Какой срок выполнения работ, в календарных днях?",
+  "kind": "num",
+  "expected": [
+   120
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "04_proekt_kontrakta.txt",
+  "quote": "120 календарных дней"
+ },
+ {
+  "id": "P05-08",
+  "package": "P05",
+  "source": "P05",
+  "key": "warranty",
+  "question": "Какой гарантийный срок на результаты работ, в месяцах?",
+  "kind": "num",
+  "expected": [
+   12
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "04_proekt_kontrakta.txt",
+  "quote": "12 (двенадцать) месяцев"
+ },
+ {
+  "id": "P05-09",
+  "package": "P05",
+  "source": "P05",
+  "key": "deadline_submission",
+  "question": "До какой даты и времени принимаются заявки?",
+  "kind": "date",
+  "expected": [
+   "23.11.2026",
+   "10:00"
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "23.11.2026 10:00"
+ },
+ {
+  "id": "P05-10",
+  "package": "P05",
+  "source": "P05",
+  "key": "egrul_fresh",
+  "question": "Не старше скольких дней должна быть выписка из ЕГРЮЛ?",
+  "kind": "absent",
+  "expected": [],
+  "type": "ловушка: нет в документах",
+  "status": "нет в документах",
+  "file": "",
+  "quote": ""
+ },
+ {
+  "id": "P05-11",
+  "package": "P05",
+  "source": "P05",
+  "key": "staff",
+  "question": "Сколько специалистов исполнитель обязан привлечь к работам?",
+  "kind": "absent",
+  "expected": [],
+  "type": "ловушка: нет в документах",
+  "status": "нет в документах",
+  "file": "",
+  "quote": ""
+ },
+ {
+  "id": "P06-01",
+  "package": "P06",
+  "source": "P06",
+  "key": "nmck",
+  "question": "Какая начальная (максимальная) цена контракта, в рублях?",
+  "kind": "num",
+  "expected": [
+   6200000.0
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "Начальная (максимальная) цена контракта: 6 200 000,00 руб"
+ },
+ {
+  "id": "P06-02",
+  "package": "P06",
+  "source": "P06",
+  "key": "bid_security",
+  "question": "Какой размер обеспечения заявки, в рублях?",
+  "kind": "num",
+  "expected": [
+   124000.0
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "124 000,00"
+ },
+ {
+  "id": "P06-03",
+  "package": "P06",
+  "source": "P06",
+  "key": "contract_security",
+  "question": "Какой размер обеспечения исполнения контракта, в процентах?",
+  "kind": "num",
+  "expected": [
+   10
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "10 % от цены контракта"
+ },
+ {
+  "id": "P06-04",
+  "package": "P06",
+  "source": "P06",
+  "key": "contract_security_rub",
+  "question": "Сколько рублей составит обеспечение исполнения контракта, если контракт заключат по начальной (максимальной) цене?",
+  "kind": "num",
+  "expected": [
+   620000.0
+  ],
+  "type": "расчёт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "10 % от цены контракта"
+ },
+ {
+  "id": "P06-05",
+  "package": "P06",
+  "source": "P06",
+  "key": "nat_regime_software",
+  "question": "Должно ли программное обеспечение быть из реестра российского ПО? Ответьте да или нет.",
+  "kind": "yes",
+  "expected": [
+   "да"
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "единый реестр российских программ"
+ },
+ {
+  "id": "P06-06",
+  "package": "P06",
+  "source": "P06",
+  "key": "license",
+  "question": "Какие лицензии должны быть у участника?",
+  "kind": "all_kw",
+  "expected": [
+   "техническ",
+   "конфиденциальн"
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "02_trebovaniya_k_zayavke.txt",
+  "quote": "лицензии на деятельность по технической защите конфиденциальной информации"
+ },
+ {
+  "id": "P06-07",
+  "package": "P06",
+  "source": "P06",
+  "key": "experience",
+  "question": "Сколько исполненных контрактов нужно для подтверждения опыта и какая минимальная цена каждого, в рублях?",
+  "kind": "num",
+  "expected": [
+   1,
+   2000000
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "не менее 1 исполненных договоров"
+ },
+ {
+  "id": "P06-08",
+  "package": "P06",
+  "source": "P06",
+  "key": "execution_term",
+  "question": "Какой срок выполнения работ, в календарных днях?",
+  "kind": "num",
+  "expected": [
+   45
+  ],
+  "type": "факт",
+  "status": "ответ",
+  "file": "04_proekt_kontrakta.txt",
+  "quote": "45 календарных дней"
+ },
+ {
+  "id": "P06-09",
+  "package": "P06",
+  "source": "P06",
+  "key": "warranty",
+  "question": "Какой гарантийный срок на результаты работ, в месяцах?",
+  "kind": "num",
+  "expected": [
+   36,
+   24
+  ],
+  "type": "расхождение",
+  "status": "расхождение",
+  "file": "04_proekt_kontrakta.txt",
+  "quote": "36 (тридцать шесть) месяцев"
+ },
+ {
+  "id": "P06-10",
+  "package": "P06",
+  "source": "P06",
+  "key": "deadline_submission",
+  "question": "До какой даты и времени принимаются заявки?",
+  "kind": "date",
+  "expected": [
+   "01.12.2026",
+   "10:00"
+  ],
+  "type": "после изменений",
+  "status": "ответ",
+  "file": "05_izmeneniya_izveshcheniya.txt",
+  "quote": "01.12.2026 10:00"
+ },
+ {
+  "id": "P06-11",
+  "package": "P06",
+  "source": "P06",
+  "key": "fsb_negated",
+  "question": "Нужна ли участнику лицензия ФСБ России? Ответьте да или нет.",
+  "kind": "no",
+  "expected": [
+   "не требуется",
+   "не установлен",
+   "нет",
+   "не нужн",
+   "исключ",
+   "отсутств"
+  ],
+  "type": "ловушка: требования нет",
+  "status": "ответ",
+  "file": "01_izveshchenie.txt",
+  "quote": "Требование о наличии лицензии ФСБ России к участникам настоящей закупки не установлено"
+ },
+ {
+  "id": "P06-12",
+  "package": "P06",
+  "source": "P06",
+  "key": "egrul_fresh",
+  "question": "Не старше скольких дней должна быть выписка из ЕГРЮЛ?",
+  "kind": "absent",
+  "expected": [],
+  "type": "ловушка: нет в документах",
+  "status": "нет в документах",
+  "file": "",
+  "quote": ""
+ },
+ {
+  "id": "P06-13",
+  "package": "P06",
+  "source": "P06",
+  "key": "staff",
+  "question": "Сколько специалистов исполнитель обязан привлечь к работам?",
+  "kind": "absent",
+  "expected": [],
+  "type": "ловушка: нет в документах",
+  "status": "нет в документах",
+  "file": "",
+  "quote": ""
+ }
+]
