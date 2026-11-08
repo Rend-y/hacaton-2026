@@ -1,11 +1,14 @@
 """Команда запроса к документам и коды завершения CLI."""
+import json
 import sys
 from typing import Annotated, Literal
 
 from cyclopts import App, Parameter
 from cyclopts.exceptions import CycloptsError
 
+from src.files.document_sets import DocumentChats, DocumentSets, local_documents
 from src.generation.client import ApiError
+from src import settings
 from src.settings import QueryOptions
 
 
@@ -27,6 +30,25 @@ def query(
     """Ответить на вопросы по общему комплекту переданных файлов."""
     from src.workflows.query import run_query
     return run_query(QueryOptions(attachment=attachment, prompt=prompt, mode=mode))
+
+
+@app.command
+def upload_documents(
+    *,
+    attachment: Annotated[list[str], Parameter(consume_multiple=1, negative=False, json_list=False,
+        help='Пути к файлам для сохранения в комплекте.')],
+    title: Annotated[str | None, Parameter(help='Название отдельного комплекта.')] = None,
+    chat_id: Annotated[str | None, Parameter(help='ID чата MCP, к которому нужно добавить файлы.')] = None,
+) -> int:
+    """Сохранить отдельный комплект или добавить документы в текущий MCP-чат."""
+    if (title is None) == (chat_id is None):
+        print('Укажите --title для отдельного комплекта или --chat-id для текущего чата.', file=sys.stderr)
+        return 2
+    files = local_documents(attachment)
+    result = (DocumentChats(settings.ROOT).append(chat_id, files) if chat_id is not None
+              else DocumentSets(settings.ROOT).save(title, files))
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
 
 
 def main(argv=None):
