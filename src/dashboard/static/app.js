@@ -1,7 +1,7 @@
 "use strict";
 
 const byId = (id) => document.getElementById(id);
-const page = new Map([["/new", "new"], ["/settings", "settings"], ["/tests", "tests"]]).get(location.pathname) ?? "runs";
+const page = new Map([["/new", "new"], ["/settings", "settings"], ["/tests", "tests"], ["/compare", "compare"]]).get(location.pathname) ?? "runs";
 const statuses = new Map([
   ["running", "В процессе"],
   ["completed", "Завершена"],

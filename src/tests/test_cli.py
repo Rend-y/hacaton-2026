@@ -209,7 +209,7 @@ class CliTests(unittest.TestCase):
         correction = json.loads(client.calls[1][1]['content'])['previous_answers_and_validation_errors'][0]
         self.assertIn('цитата не найдена', correction['errors'][0])
         self.assertIn(quote, correction['errors'][0])
-        self.assertEqual(answers['P01-01'], corrected)
+        self.assertEqual(answers['P01-01'], {**corrected, 'answer': quote})
 
     def test_verified_restores_case_ending_from_file_without_retry(self):
         filename = 'notice.txt'
@@ -222,7 +222,7 @@ class CliTests(unittest.TestCase):
         answers = self.process(client, questions=self.questions[:1], documents={filename: source})
 
         self.assertEqual(len(client.calls), 1)
-        self.assertEqual(answers['P01-01']['answer'], raw['answer'])
+        self.assertEqual(answers['P01-01']['answer'], source)
         self.assertEqual(answers['P01-01']['evidence'], [{'file': filename, 'quote': source}])
         self.assertTrue(any(event['event'] == 'quote_restored' for event in self.events if 'event' in event))
 
@@ -343,6 +343,47 @@ class CliTests(unittest.TestCase):
         answers = self.process(client, questions=self.questions[:1], attempts=0)
         self.assertEqual(answers['P01-01']['status'], 'не знаю')
         self.assertNotIn('error_type', answers['P01-01'])
+
+    def test_verified_copies_numeric_context_from_document_quotes(self):
+        cases = (
+            ('Каков размер обеспечения исполнения контракта?', '5',
+             '2.4. Обеспечение исполнения контракта устанавливается в размере 5 % от цены контракта.'),
+            ('За сколько максимум календарных дней может быть получена выписка из ЕГРЮЛ?', '30',
+             '1.4. Выписка из ЕГРЮЛ (дата получения — не более 30 календарных дней до дня подачи заявки).'),
+            ('Насколько свежей должна быть выписка из ЕГРЮЛ?', '30',
+             'Выписка из ЕГРЮЛ, полученная не ранее чем за 30 дней до даты подачи заявки.'),
+        )
+        for question, value, quote in cases:
+            with self.subTest(question=question):
+                raw = self.answer(value=value)
+                raw['evidence'][0]['quote'] = quote
+                client = FakeClient(self.response(raw))
+                result = self.process(client, questions=[{**self.questions[0], 'question': question}],
+                                      documents={'notice.txt': quote})['P01-01']
+                self.assertEqual(result['answer'], quote)
+                self.assertEqual(result['evidence'], raw['evidence'])
+                self.assertEqual(len(client.calls), 1)
+
+    def test_verified_preserves_source_punctuation_and_whitespace(self):
+        source = 'Отчёт — «Принято».\nОтправка —  через портал.'
+        raw = self.answer(value='Отчёт отправили через портал')
+        raw['evidence'][0]['quote'] = 'отчет - "принято". отправка - через портал'
+        result = self.process(FakeClient(self.response(raw)), questions=self.questions[:1],
+                              documents={'notice.txt': source})['P01-01']
+        self.assertEqual(result['answer'], source)
+        self.assertEqual(result['evidence'][0]['quote'], source)
+        self.assertEqual(answer_format.csv_row(result)['answer'], source)
+
+    def test_verified_preserves_conflict_summary_and_explicit_binary_answer(self):
+        conflict = {**self.answer(value='60 дней по извещению, 75 дней по проекту.'), 'status': 'расхождение'}
+        other_quote = 'Договорный срок составляет 75 календарных дней.'
+        conflict['evidence'].append({'file': 'contract.txt', 'quote': other_quote})
+        binary = self.answer('P01-02', value='Да.')
+        questions = [self.questions[0], {**self.questions[1], 'question': 'Указан ли срок? Ответьте да или нет.'}]
+        results = self.process(FakeClient(self.response(conflict, binary)), questions=questions,
+                               documents={**self.documents, 'contract.txt': other_quote})
+        self.assertEqual(results['P01-01'], conflict)
+        self.assertEqual(results['P01-02'], binary)
 
     def test_invalid_json_then_valid_retry(self):
         client = FakeClient('not JSON', self.response(self.answer(), self.answer('P01-02')))

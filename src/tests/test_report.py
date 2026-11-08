@@ -214,6 +214,12 @@ class ReportTests(unittest.TestCase):
         self.assertTrue(any('техническ' in warning.lower() for warning in model['warnings']))
         self.assertEqual(model['runs'][0]['operations']['technical_errors'], 1)
         self.assertIsNone(model['runs'][0]['quality'])
+        self.write_evaluation(self.run)
+        page = report.write_run_report(self.run).read_text(encoding='utf-8')
+        self.assertIn('data-status="технический сбой" data-verdict="осторожно"', page)
+        self.assertIn('API модели ограничил запрос (HTTP 429).', page)
+        self.assertIn('Учтено в оценке по эталону', page)
+        self.assertNotIn('data-status="не знаю" data-verdict="осторожно"', page)
 
     def test_stale_evaluation_digest_is_rejected(self):
         self.write_evaluation(self.run)

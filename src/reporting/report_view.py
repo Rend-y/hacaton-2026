@@ -37,7 +37,7 @@ def _badge(text, category=None):
     mapping = {'верно': 'good', 'обман': 'bad', 'осторожно': 'cautious',
                'ответ': 'neutral', 'расхождение': 'conflict', 'нет в документах': 'neutral',
                'не знаю': 'cautious', 'completed': 'good', 'completed_with_errors': 'bad',
-               'running': 'cautious'}
+               'running': 'cautious', 'технический сбой': 'bad'}
     style = mapping.get(category or text, 'neutral')
     return '<span class="badge %s">%s</span>' % (style, _e(text))
 
@@ -119,6 +119,10 @@ def _operations(run):
     ]
     secondary = '<div class="operations-detail"><span>Токены входа: <b>%s</b></span><span>Токены выхода: <b>%s</b></span><span>API-запросы исправления: <b>%s</b></span></div>' % (
         _e(_number(operations.get('prompt_tokens'))), _e(_number(operations.get('completion_tokens'))), _e(_number(operations.get('repair_requests'))))
+    documents = run.get('document_names') or []
+    if documents:
+        secondary += '<details class="configuration"><summary>Файлы, переданные модели (%s)</summary><ul>%s</ul></details>' % (
+            len(documents), ''.join('<li><code>%s</code></li>' % _e(name) for name in documents))
     return '<section><h3 class="subheading">Как прошёл запуск</h3><div class="metrics operations">%s</div>%s</section>' % (''.join(metrics), secondary)
 
 
@@ -134,6 +138,17 @@ def _evidence(items):
     return ''.join(pieces)
 
 
+def _answer_status(answer):
+    return 'технический сбой' if answer.get('error_type') else str(answer.get('status') or 'не указан')
+
+
+def _technical_reason(answer):
+    reason = answer.get('reason') or ''
+    if reason.split(';', 1)[0] == 'Model API HTTP 429':
+        return 'API модели ограничил запрос (HTTP 429).'
+    return reason or 'Обработка завершилась с технической ошибкой.'
+
+
 def _answer_detail(answer):
     metadata = []
     if answer.get('package'):
@@ -141,31 +156,40 @@ def _answer_detail(answer):
     if answer.get('type'):
         metadata.append('Тип вопроса: <b>%s</b>' % _e(answer['type']))
     body = '<p class="answer-metadata">%s</p>' % ' · '.join(metadata) if metadata else ''
-    body += '<h4>Ответ системы</h4><p class="answer-value">%s</p>' % _e(answer.get('answer') or 'Содержательный ответ не предоставлен.')
+    if answer.get('error_type'):
+        body += '<h4>Ответ модели недоступен</h4><p class="technical-note">%s</p>' % _e(_technical_reason(answer))
+        if answer.get('verdict'):
+            body += '<div class="assessment"><h4>Учтено в оценке по эталону</h4><p>%s</p></div>' % _badge(answer['verdict'])
+        return body
+    body += '<h4>Ответ системы</h4><p class="answer-value" style="white-space: pre-wrap">%s</p>' % _e(answer.get('answer') or 'Содержательный ответ не предоставлен.')
     if answer.get('reason'):
         body += '<h4>Основание, сохранённое системой</h4><p>%s</p>' % _e(answer['reason'])
     if answer.get('verdict'):
         body += '<div class="assessment"><h4>Оценка по эталону</h4><p>%s%s</p></div>' % (
             _badge(answer['verdict']), ' — ' + _e(answer['why']) if answer.get('why') else '')
-    if answer.get('error_type'):
-        body += '<p class="technical-note">Техническая причина: <code>%s</code></p>' % _e(answer['error_type'])
     body += '<h4>Доказательства ответа</h4>' + _evidence(answer.get('evidence'))
+    for issue in answer.get('source_issues') or []:
+        body += '<p class="technical-note">Источник не подтверждён (<code>%s</code>) — %s</p>' % (
+            _e(issue['file'] or 'файл не указан'), _e(issue['reason']))
     return body
 
 
 def _answers(run, index):
     answers = run.get('answers') or []
     label = run.get('label') or 'Запуск'
-    statuses = sorted({str(a.get('status') or 'не указан') for a in answers})
+    statuses = sorted({_answer_status(answer) for answer in answers})
     options = ''.join('<option value="%s">%s</option>' % (_e(status), _e(status)) for status in statuses)
     entries = []
     for answer in answers:
-        status = str(answer.get('status') or 'не указан')
+        status = _answer_status(answer)
+        technical = bool(answer.get('error_type'))
         verdict = str(answer.get('verdict') or '')
         question = answer.get('question') or 'Текст вопроса не сохранён'
-        overview = str(answer.get('answer') or answer.get('reason') or 'Без содержательного ответа')
+        overview = (_technical_reason(answer) if technical
+                    else str(answer.get('answer') or answer.get('reason') or 'Без содержательного ответа'))
         overview = overview[:210] + ('…' if len(overview) > 210 else '')
-        badges = '<span class="labelled-badge"><small>Статус модели</small>%s</span>' % _badge(status)
+        badges = '<span class="labelled-badge"><small>%s</small>%s</span>' % (
+            'Результат обработки' if technical else 'Статус модели', _badge(status))
         badges += '<span class="labelled-badge"><small>Оценщик</small>%s</span>' % (
             _badge(verdict) if verdict else '<span class="not-scored">Без оценки</span>')
         entries.append('''<details class="answer-entry" data-answer data-status="%s" data-verdict="%s">
@@ -176,7 +200,7 @@ def _answers(run, index):
     return '''<section class="panel answer-section" id="answers-%s" data-answer-group>
 <div class="section-line"><h3>Ответы и доказательства</h3><span class="muted">%s</span></div>
 <div class="filters"><label for="search-%s">Поиск по вопросу, ответу или цитате<input id="search-%s" type="search" data-search placeholder="Например: гарантия или P01-07"></label>
-<label for="status-%s">Статус модели<select id="status-%s" data-status-filter><option value="">Все статусы</option>%s</select></label>
+<label for="status-%s">Статус ответа или обработки<select id="status-%s" data-status-filter><option value="">Все статусы</option>%s</select></label>
 <label for="verdict-%s">Оценка ответа<select id="verdict-%s" data-verdict-filter><option value="*">Все ответы</option><option value="верно">Верно</option><option value="обман">Ошибка</option><option value="осторожно">Осторожно</option><option value="">Без оценки</option></select></label></div>
 <div class="answer-tools"><span class="result-count" role="status" aria-live="polite" aria-atomic="true">Показано %s из %s ответов</span><button type="button" data-expand>Раскрыть видимые</button><button type="button" data-collapse>Свернуть</button></div>
 <p class="small muted">Фильтры меняют только список. Метрики выше рассчитаны по всему оцениваемому набору.</p>

@@ -104,7 +104,7 @@ class QueryTests(unittest.TestCase):
         self.assertEqual(payload['questions'][0]['id'], 'INPUT-001')
         self.assertEqual(self.read_json(self.output / 'manifest.json')['status'], 'completed')
         answers = self.read_json(self.output / 'answers.json')
-        self.assertEqual(answers[0]['answer'], '12 месяцев')
+        self.assertEqual(answers[0]['answer'], self.quote)
         citation = answers[0]['evidence'][0]
         self.assertIn(citation['file'], {item['file'] for item in payload['documents']})
         self.assertEqual(citation['quote'], self.quote)

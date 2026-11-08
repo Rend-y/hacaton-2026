@@ -18,19 +18,34 @@ STATUSES = frozenset(('ответ', 'расхождение', 'нет в док�
 _DATE = re.compile(r'(?<!\d)(\d{1,2})[./](\d{1,2})[./](\d{4})(?!\d)')
 _ISO_DATE = re.compile(r'(?<!\d)(\d{4})-(\d{2})-(\d{2})(?!\d)')
 _TIME = re.compile(r'(?<!\d)([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?(?!\d)')
-_NUMBER = re.compile(
-    r'(?<![\w])[-+]?\d+(?:[ \u00a0\u202f]\d{3})*(?:[.,]\d+)?(?![\w])'
-)
+_NUMBER = re.compile(r'(?<!\w)[-+]?\d+(?:[ \u00a0\u202f]\d{3})*(?:[.,]\d+)?(?!\w)')
 _PARAGRAPH = re.compile(r'^\s*\d+(?:\.\d+)*[.)]\s+', re.MULTILINE)
 _CASE_ENDING = re.compile(r'\b[а-я]{5,}([еы])\b')
+_QUOTES = '«»„“”"\''
+_DASHES = '–—−'
+_SOURCE_CHARS = {' ': r'\s+', 'е': '[её]', '"': f'[{re.escape(_QUOTES)}]',
+                 '-': f'[{re.escape(_DASHES + "-")}]'}
+_BINARY_REQUEST = re.compile(r'\b(?:ответьте|ответь|только)\s*:?\s*"?(?:да|нет)"?\s*(?:или|/)\s*"?(?:да|нет)\b')
 
 
 def norm(text: str) -> str:
     """Нормализовать цитату по правилам официального оценщика."""
     text = (text or '').lower().replace('ё', 'е').replace('\xa0', ' ').replace('\u202f', ' ')
-    text = re.sub(r'[«»„“”"\']', '"', text)
-    text = re.sub(r'[–—−]', '-', text)
+    text = re.sub(f'[{_QUOTES}]', '"', text)
+    text = re.sub(f'[{_DASHES}]', '-', text)
     return re.sub(r'\s+', ' ', text).strip()
+
+
+def citation_error(filename: Any, quote: Any, documents: dict[str, str]) -> str | None:
+    """Проверяет цитату именно в названном файле переданного комплекта."""
+    if not isinstance(filename, str) or filename not in documents:
+        return 'файл не найден в документах запуска.'
+    normalized_quote = norm(quote) if isinstance(quote, str) else ''
+    if len(normalized_quote) < 8:
+        return 'дословная цитата должна содержать не менее 8 символов после нормализации.'
+    if normalized_quote not in norm(documents[filename]):
+        return f'цитата не найдена в указанном файле {filename}.'
+    return None
 
 
 def _quote_hint(normalized_quote: str, document: str) -> str | None:
@@ -74,6 +89,46 @@ def restore_quote_endings(answer: dict, docs: dict[str, str]) -> dict:
         if source and _same_quote_with_case_ending(normalized_quote, norm(source)):
             restored[index] = {**item, 'quote': source}
     return {**answer, 'evidence': restored} if restored != evidence else answer
+
+
+def _source_excerpt(quote: str, document: str) -> str | None:
+    normalized = norm(quote)
+    if not normalized:
+        return None
+    pattern = ''.join(_SOURCE_CHARS.get(char, re.escape(char)) for char in normalized)
+    left = r'(?<!\w)' if normalized[0].isalnum() else ''
+    right = r'(?!\w)' if normalized[-1].isalnum() else ''
+    if normalized[0].isdigit():
+        left += r'(?<!\d[.,:])'
+    if normalized[-1].isdigit():
+        right += r'(?![.,:]\d|[ \u00a0\u202f]\d{3}(?!\d))'
+    # Забираем прилегающий знак конца предложения, сохраняя границы слов и чисел.
+    ending = r'(?:[.!?…]+(?![.!?…\d]))?'
+    candidates = set()
+    for match in re.finditer(rf'{left}(?P<excerpt>{pattern}){right}{ending}', document, re.IGNORECASE):
+        if match['excerpt'] == quote:
+            return match.group()
+        if norm(match['excerpt']) == normalized:
+            candidates.add(match.group())
+    return candidates.pop() if len(candidates) == 1 else None
+
+
+def quote_fact(answer: dict, question: str, docs: dict[str, str]) -> dict | None:
+    """Копирует подтверждающие фрагменты. None означает, что источник не найден."""
+    status = answer.get('status')
+    if not isinstance(status, str) or norm(status) != 'ответ' or answer.get('calculation') is not None:
+        return answer
+    evidence = []
+    for item in answer.get('evidence', []):
+        source = _source_excerpt(item['quote'], docs.get(item['file'], ''))
+        if source is None:
+            return None
+        evidence.append({**item, 'quote': source})
+    if not evidence:
+        return None
+    text = (answer['answer'] if _BINARY_REQUEST.search(norm(question))
+            else '\n'.join(dict.fromkeys(item['quote'] for item in evidence)))
+    return {**answer, 'answer': text, 'evidence': evidence}
 
 
 def _decimal(value: Any) -> Decimal | None:
@@ -202,21 +257,14 @@ def validate_answer(answer: dict, docs: dict[str, str], read_errors: list[str] |
             errors.append(f'{label}: требуется объект с file и quote.')
             continue
         filename, quote = item.get('file'), item.get('quote')
-        if not isinstance(filename, str) or filename not in docs:
-            errors.append(f'{label}: файл не найден в текущей закупке.')
-            continue
-        normalized_quote = norm(quote) if isinstance(quote, str) else ''
-        if len(normalized_quote) < 8:
-            errors.append(f'{label}: дословная цитата должна содержать не менее 8 символов после нормализации.')
-            continue
-        # Сначала проверяем принадлежность цитаты файлу, затем используем её числа.
-        document = docs[filename]
-        if normalized_quote not in norm(document):
-            error = f'{label}: цитата не найдена в указанном файле {filename}.'
-            hint = _quote_hint(normalized_quote, document)
+        error = citation_error(filename, quote, docs)
+        if error:
+            hint = (_quote_hint(norm(quote), docs[filename])
+                    if isinstance(filename, str) and filename in docs and isinstance(quote, str) and len(norm(quote)) >= 8
+                    else None)
             if hint:
                 error += f' Похожий фрагмент из файла: {hint!r}. Если он подтверждает ответ, скопируй его дословно.'
-            errors.append(error)
+            errors.append(f'{label}: {error}')
             continue
         valid_evidence.append(quote)
         evidence_files.add(filename)

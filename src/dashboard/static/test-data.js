@@ -22,7 +22,14 @@ if (page === "tests") {
 
   function addCase(values = {}, focus = false) {
     const row = byId("test-case-template").content.firstElementChild.cloneNode(true);
-    row.querySelectorAll("[data-field]").forEach((input) => { input.value = values[input.dataset.field] ?? ""; });
+    row.querySelectorAll("[data-field]").forEach((input) => { input.value = values[input.dataset.field] ?? input.value; });
+    const status = row.querySelector('[data-field="status"]');
+    const expected = row.querySelector('[data-field="expected"]');
+    function updateRequired() {
+      expected.required = status.value === "ответ" || status.value === "расхождение";
+    }
+    status.addEventListener("change", updateRequired);
+    updateRequired();
     row.querySelector(".remove-test-case").addEventListener("click", () => {
       row.remove();
       numberCases();
@@ -51,6 +58,16 @@ if (page === "tests") {
       error.hidden = false;
       button.disabled = false;
     }
+  }
+
+  function runButtons(url, name, payload) {
+    return [["baseline", "Baseline"], ["verified", "Verified"]].map(([mode, label]) => {
+      const button = node("button", `Запустить ${label}`, "button secondary");
+      button.type = "button";
+      button.setAttribute("aria-label", `Запустить ${label} для набора «${name}»`);
+      button.addEventListener("click", () => runTest(url, { ...payload, mode }, button));
+      return button;
+    });
   }
 
   function fillForm(test = null) {
@@ -101,17 +118,13 @@ if (page === "tests") {
         const item = document.createElement("li");
         const details = document.createElement("div");
         details.append(node("strong", test.name), node("span", `Файлов: ${test.documents} · Вопросов: ${test.questions}`, "run-meta"));
-        const button = node("button", "Запустить тест", "button secondary");
-        button.type = "button";
-        button.setAttribute("aria-label", `Запустить тест «${test.name}»`);
-        button.addEventListener("click", () => runTest("/api/tests/run", { name: test.name }, button));
         const edit = node("button", "Редактировать", "button secondary");
         edit.type = "button";
         edit.setAttribute("aria-label", `Редактировать набор «${test.name}»`);
         edit.addEventListener("click", () => editTest(test.name, edit));
         const actions = document.createElement("div");
         actions.className = "test-actions";
-        actions.append(button, edit);
+        actions.append(...runButtons("/api/tests/run", test.name, { name: test.name }), edit);
         item.append(details, actions);
         return item;
       });
@@ -129,8 +142,7 @@ if (page === "tests") {
 
   addButton.addEventListener("click", () => addCase({}, true));
   cancelEdit.addEventListener("click", () => { fillForm(); byId("test-name").focus(); });
-  const preset = byId("p01-run");
-  preset.addEventListener("click", () => runTest("/api/tests/p01", {}, preset));
+  byId("p01-actions").append(...runButtons("/api/tests/p01", "Контрольный тест P01", {}));
   addCase();
   loadTests();
   form.addEventListener("submit", async (event) => {

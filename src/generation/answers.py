@@ -78,6 +78,6 @@ def csv_row(answer):
     text = answer.get('answer', '')
     quote = first.get('quote', '')
     return {'id': answer['id'], 'status': status if isinstance(status, str) else '',
-            'answer': re.sub(r'\s+', ' ', text).strip() if isinstance(text, str) and not empty else '',
+            'answer': text if isinstance(text, str) and not empty else '',
             'quote': re.sub(r'\s+', ' ', quote).strip() if isinstance(quote, str) and not empty else '',
             'file': first.get('file', '') if isinstance(first.get('file', ''), str) and not empty else ''}

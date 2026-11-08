@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
   <script src="/test-data.js" defer></script>
+  <script src="/comparison.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">К содержимому</a>
@@ -20,6 +21,7 @@
         <a href="/" id="runs-link"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" /></svg>Обработки</a>
         <a href="/new" id="new-link"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>Новая обработка</a>
         <a href="/tests" id="tests-link"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 3h6m-5 0v7l-5 9a1 1 0 0 0 1 2h12a1 1 0 0 0 1-2l-5-9V3M8 15h8" /></svg>Тестовые наборы</a>
+        <a href="/compare" id="compare-link"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 19V11m7 8V5m7 14v-5M3 21h18" /></svg>Сравнение запусков</a>
         <a href="/settings" id="settings-link"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16M8 5v4M16 10v4M10 15v4" /></svg>Настройки</a>
       </nav>
       <span class="workspace"><span></span>Локальная рабочая область</span>
@@ -33,7 +35,10 @@
             <h1>Обработки</h1>
             <p>Следите за ходом запусков и открывайте готовые отчёты.</p>
           </div>
-          <a class="button primary" href="/new"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>Новая обработка</a>
+          <div class="test-actions">
+            <a class="button secondary" href="/compare">Сравнить запуски</a>
+            <a class="button primary" href="/new"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>Новая обработка</a>
+          </div>
         </header>
 
         <section class="panel history" aria-labelledby="history-title">
@@ -48,6 +53,68 @@
             <tbody id="run-rows"></tbody>
           </table>
         </section>
+      </section>
+
+      <section id="compare-page" hidden>
+        <header class="page-heading">
+          <div>
+            <h1>Сравнение запусков</h1>
+            <p>Выберите Baseline и Verified из истории. Дашборд сопоставит общие вопросы по тексту.</p>
+          </div>
+        </header>
+        <form id="comparison-form" class="panel comparison-panel" action="/compare">
+          <div class="comparison-grid">
+            <label class="field">Baseline · прямой ответ <select name="baseline" required></select></label>
+            <label class="field">Verified · с проверкой <select name="verified" required></select></label>
+          </div>
+          <div class="test-actions"><button class="button primary" type="submit" disabled>Сравнить</button></div>
+          <p id="comparison-state" class="hint" role="status">Загружаем историю…</p>
+          <p id="comparison-error" class="notice" role="alert" hidden></p>
+        </form>
+        <div id="comparison-results" class="comparison-results" hidden>
+          <section class="panel comparison-panel" aria-labelledby="coverage-title">
+            <div class="comparison-heading"><h2 id="coverage-title">Общие вопросы</h2><div id="comparison-links" class="test-actions"></div></div>
+            <dl id="comparison-coverage" class="comparison-metrics"></dl>
+            <p id="comparison-scope" class="hint"></p>
+            <div class="comparison-chart">
+              <h3>Что изменилось на пересечении</h3>
+              <p id="comparison-overlap-note" class="hint"></p>
+              <div id="comparison-overlap-chart" class="comparison-chart-bars"></div>
+            </div>
+          </section>
+          <section class="panel comparison-panel" aria-labelledby="quality-title">
+            <h2 id="quality-title">Оценка и затраты</h2>
+            <p id="comparison-quality-note" class="hint"></p>
+            <div class="comparison-chart">
+              <h3>Индекс доверия по отчётам</h3>
+              <div id="comparison-trust-chart" class="comparison-chart-bars"></div>
+              <p class="hint">Шкала от 0 до 100.</p>
+            </div>
+            <div id="comparison-metrics" class="comparison-table comparison-summary"></div>
+            <details id="comparison-categories" class="comparison-categories" hidden>
+              <summary>Индекс доверия по типам вопросов</summary>
+              <div id="comparison-category-table" class="comparison-table comparison-summary"></div>
+            </details>
+          </section>
+          <section class="panel comparison-panel" aria-labelledby="answer-summary-title">
+            <h2 id="answer-summary-title">Сводка по ответам</h2>
+            <p class="hint">Количество ответов каждого статуса по общим вопросам. Разница считается как Verified минус Baseline.</p>
+            <div id="comparison-status-chart" class="comparison-status-chart" hidden></div>
+            <div id="comparison-answer-summary" class="comparison-table comparison-summary"></div>
+          </section>
+          <section class="panel comparison-panel" aria-labelledby="transition-title">
+            <h2 id="transition-title">Матрица статусов</h2>
+            <p class="hint">Строки показывают статусы Baseline, столбцы — статусы Verified. Числа обозначают количество общих вопросов.</p>
+            <div id="comparison-matrix" class="comparison-table"></div>
+          </section>
+          <section class="panel comparison-panel" aria-labelledby="answers-title">
+            <div class="comparison-heading">
+              <h2 id="answers-title">Ответы по вопросам</h2>
+              <label class="comparison-filter"><input type="checkbox" id="comparison-changed"> Только различия</label>
+            </div>
+            <div id="comparison-questions"></div>
+          </section>
+        </div>
       </section>
 
       <section id="new-page" hidden>
@@ -93,11 +160,14 @@
           </div>
         </header>
         <section class="panel test-library" aria-labelledby="test-library-title">
-          <div class="panel-heading"><h2 id="test-library-title">Сохранённые наборы</h2></div>
+          <div class="panel-heading">
+            <h2 id="test-library-title">Сохранённые наборы</h2>
+            <p class="hint">Baseline даёт прямой ответ. Verified проверяет цитаты, числа и даты. Оба запуска оцениваются по эталону.</p>
+          </div>
           <p id="test-list-error" class="notice" role="alert" hidden></p>
           <div class="test-preset">
             <div><strong>Контрольный тест P01</strong><span class="run-meta">Встроенный набор · 5 файлов · 40 вопросов</span></div>
-            <button class="button secondary" type="button" id="p01-run">Запустить тест P01</button>
+            <div class="test-actions" id="p01-actions"></div>
           </div>
           <p id="test-list-empty" class="empty" role="status">Загружаем наборы…</p>
           <ul id="test-list" hidden></ul>
@@ -117,7 +187,7 @@
           </div>
           <div class="field">
             <h2>Вопросы и эталоны</h2>
-            <p class="hint" id="test-expected-hint">Укажите ожидаемое значение или несколько обязательных фрагментов, по одному на строку.</p>
+            <p class="hint" id="test-expected-hint">Для ответа и расхождения укажите обязательные фрагменты, по одному на строку. Для остальных статусов это поле можно оставить пустым.</p>
             <div id="test-cases"></div>
             <button class="button secondary" id="add-test-case" type="button">Добавить вопрос</button>
           </div>
@@ -132,6 +202,14 @@
           <fieldset class="test-case">
             <legend></legend>
             <label class="field">Вопрос <input type="text" data-field="question" maxlength="10000" required></label>
+            <label class="field">Ожидаемый статус
+              <select data-field="status">
+                <option value="ответ">Ответ</option>
+                <option value="расхождение">Расхождение</option>
+                <option value="нет в документах">Нет в документах</option>
+                <option value="не знаю">Не знаю</option>
+              </select>
+            </label>
             <label class="field">Ожидаемый ответ
               <textarea data-field="expected" rows="2" maxlength="10000" required aria-describedby="test-expected-hint"></textarea>
             </label>

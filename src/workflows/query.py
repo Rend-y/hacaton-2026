@@ -15,6 +15,7 @@ from src.files.input_loader import MAX_QUESTIONS, MAX_QUESTION_CHARS, load_docum
 from src.generation.answer_engine import question_batches
 from src.generation.client import estimate_request_tokens, load_env
 from src.generation.prompts import messages
+from src.generation.validation import citation_error
 
 
 def _show_inputs(loaded):
@@ -95,7 +96,12 @@ def _run_batch(args: QueryOptions, loaded, rows, output: Path | None = None, *, 
             emit('Основание: ' + answer['reason'])
         for evidence in answer.get('evidence') or []:
             if isinstance(evidence, dict):
-                emit('Источник: %s\n  %s' % (evidence.get('file', ''), evidence.get('quote', '')))
+                filename, quote = evidence.get('file'), evidence.get('quote')
+                issue = citation_error(filename, quote, loaded['documents'])
+                if issue:
+                    emit('Источник не подтверждён (%s): %s' % (filename or 'файл не указан', issue))
+                else:
+                    emit('Источник: %s\n  %s' % (filename, quote))
     emit('\nОтчёт: ' + str(output / 'report.html'))
     return code
 

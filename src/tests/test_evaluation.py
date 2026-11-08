@@ -14,6 +14,37 @@ import unittest
 from unittest.mock import patch
 
 from src.evaluation import runs as evaluation
+from src.evaluation.check import judge, load_answers, norm
+
+
+class ExpectedStatusTests(unittest.TestCase):
+    def test_unknown_and_absence_are_scored_separately(self):
+        for expected, actual, verdict in (
+            ('не знаю', 'не знаю', 'верно'),
+            ('не знаю', 'нет в документах', 'обман'),
+            ('нет в документах', 'нет в документах', 'верно'),
+            ('нет в документах', 'не знаю', 'осторожно'),
+        ):
+            with self.subTest(expected=expected, actual=actual):
+                gold = {'status': expected, 'type': expected}
+                self.assertEqual(judge(gold, {'status': actual}, {})[0], verdict)
+
+    def test_conflict_requires_both_numbers_as_values(self):
+        quote = 'Гарантийный срок — 36 месяцев.'
+        docs = {'contract.txt': norm(quote)}
+        gold = {'status': 'расхождение', 'kind': 'all_kw', 'expected': ['24', '36', 'месяц']}
+        row = {'status': 'расхождение', 'file': 'contract.txt', 'quote': quote, 'answer': '124 и 36 месяцев'}
+        self.assertEqual(judge(gold, row, docs)[0], 'обман')
+        self.assertEqual(judge(gold, {**row, 'answer': '24 и 36 месяцев'}, docs)[0], 'верно')
+
+    def test_quote_must_match_the_named_input_file(self):
+        quote = 'Гарантийный срок составляет 36 месяцев.'
+        docs = {'contract.txt': norm(quote), 'notice.txt': norm('Объект закупки — сервер.')}
+        gold = {'status': 'ответ', 'kind': 'num', 'expected': [36]}
+        row = {'status': 'ответ', 'quote': quote, 'answer': '36 месяцев'}
+        self.assertEqual(judge(gold, {**row, 'file': 'contract.txt'}, docs)[0], 'верно')
+        self.assertEqual(judge(gold, {**row, 'file': 'notice.txt'}, docs)[0], 'обман')
+        self.assertEqual(judge(gold, {**row, 'file': '006-06_demo_reglament.txt'}, docs)[0], 'обман')
 
 
 class EvaluationTests(unittest.TestCase):
@@ -94,6 +125,15 @@ class EvaluationTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             result = evaluation.compare_runs(self.before, self.after, self.output)
         self.assertEqual(result['baseline']['n'], 2)
+
+    def test_checker_reads_multiline_csv_answer(self):
+        path = self.after / 'answers.csv'
+        answer = 'Результат проверки:\nдоступ подтверждён.'
+        with path.open('w', encoding='utf-8', newline='') as stream:
+            writer = csv.writer(stream, delimiter=';')
+            writer.writerow(('id', 'status', 'answer', 'quote', 'file'))
+            writer.writerow(('P01-01', 'ответ', answer, '', ''))
+        self.assertEqual(load_answers(path)['P01-01']['answer'], answer)
 
     def test_missing_metadata_is_rejected(self):
         """Без отпечатка входов нельзя доказать, что сравниваются одинаковые данные."""

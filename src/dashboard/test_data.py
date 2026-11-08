@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 from threading import Lock
 from uuid import uuid4
 
-from src.evaluation.check import norm
+from src.evaluation.check import STATUSES, norm
 from src.evaluation.query_evaluation import _question_key
 from src.evaluation.reference_data import read_package, read_questions
 from src.files.input_loader import MAX_QUESTION_CHARS, MAX_QUESTIONS, load_documents
@@ -38,11 +38,14 @@ def _reference_rows(cases, documents):
         if not isinstance(case, dict) or any(not isinstance(case.get(field, ''), str) for field in fields):
             raise ValueError(f'Некорректные данные вопроса №{index}.')
         question, expected, quote = (case.get(field, '').strip() for field in fields)
+        status = case.get('status', 'ответ')
+        if status not in STATUSES:
+            raise ValueError(f'Укажите допустимый статус для вопроса №{index}.')
         if any(len(value) > MAX_QUESTION_CHARS for value in (question, expected, quote)):
             raise ValueError(f'Вопрос №{index} содержит поле длиннее {MAX_QUESTION_CHARS} символов.')
         key = _question_key(question)
         criteria = [line.strip() for line in expected.splitlines() if line.strip()]
-        if not key or not criteria:
+        if not key or (status in ('ответ', 'расхождение') and not criteria):
             raise ValueError(f'Укажите вопрос и ожидаемый ответ в строке №{index}.')
         if key in seen:
             raise ValueError(f'Вопрос №{index} повторяет другой вопрос набора.')
@@ -54,7 +57,8 @@ def _reference_rows(cases, documents):
             if len(normalized_quote) < 8 or not source:
                 raise ValueError(f'Цитата для вопроса №{index} должна содержать от 8 символов и встречаться в документе.')
         rows.append({'id': f'INPUT-{index:03d}', 'package': PACKAGE, 'question': question,
-                     'kind': 'all_kw', 'expected': criteria, 'type': 'факт', 'status': 'ответ',
+                     'kind': 'all_kw', 'expected': criteria, 'type': 'факт' if status == 'ответ' else status,
+                     'status': status,
                      'file': source, 'quote': quote})
     return rows
 
@@ -84,7 +88,8 @@ class TestData:
             gold = json.loads((path / 'answers_public.json').read_text(encoding='utf-8'))
             return {'name': path.name, 'revision': self._revision(path),
                     'documents': sorted(file.name for file in (path / 'documents').iterdir() if file.is_file()),
-                    'cases': [{'question': row['question'], 'expected': '\n'.join(row['expected']),
+                    'cases': [{'question': row['question'], 'status': row['status'],
+                               'expected': '\n'.join(row['expected']),
                                'quote': row.get('quote', '')} for row in gold]}
 
     def update(self, original, revision, name, files, cases):
@@ -164,7 +169,7 @@ class TestData:
             rows.append({'name': path.name, 'documents': originals, 'questions': count})
         return rows
 
-    def start(self, name, jobs):
+    def start(self, name, jobs, *, mode='verified'):
         with self.lock:
             path = self._path(name)
             documents, errors = read_package(path, PACKAGE)
@@ -172,5 +177,5 @@ class TestData:
                 raise ValueError('Не удалось прочитать документы набора. ' + errors[0])
             questions = [row['question'] for row in read_questions(path)]
             files = [(filename, text.encode('utf-8')) for filename, text in documents.items()]
-            return jobs.start(files, questions, 'verified', label=path.name, evaluation_data=path,
+            return jobs.start(files, questions, mode, label=path.name, evaluation_data=path,
                               snapshot_package=PACKAGE)

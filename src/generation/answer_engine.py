@@ -11,7 +11,7 @@ from src.generation.client import ApiError, ResponseTruncated
 from src.progress import RunLog, emit
 from src.generation.prompts import messages
 from src.settings import question_batch_limit
-from src.generation.validation import norm, restore_quote_endings, validate_answer
+from src.generation.validation import norm, quote_fact, restore_quote_endings, validate_answer
 
 
 def question_batches(questions, limit):
@@ -167,6 +167,12 @@ def process_questions(client, mode, package, questions, documents, read_errors, 
                     trace({'package': package, 'id': question['id'], 'attempt': attempt, 'event': 'quote_restored'})
                 answer = restored
                 errors = validate_answer(answer, documents, read_errors)
+                if not errors:
+                    quoted = quote_fact(answer, question['question'], documents)
+                    if quoted is None:
+                        errors.append('Скопируй дословный фрагмент с полными словами и числами из указанного файла.')
+                    else:
+                        answer = quoted
                 if not errors:
                     answer = {**answer, 'status': norm(answer['status'])}
                     if status == 'нет в документах':

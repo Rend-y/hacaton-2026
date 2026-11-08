@@ -195,6 +195,27 @@ class QueryEvaluationCliTests(unittest.TestCase):
         self.assertEqual((assessed['n'], assessed['correct'], assessed['careful'], assessed['lies']), (5, 4, 0, 1))
         self.assertEqual(assessed['index'], 60)
 
+    def test_baseline_marks_source_outside_snapshot_as_unconfirmed(self):
+        original_complete = self.client.complete
+
+        def invented_source(messages, progress=None):
+            content, meta = original_complete(messages, progress)
+            answers = json.loads(content)
+            answers[0]['file'] = '006-06_demo_reglament.txt'
+            return json.dumps(answers, ensure_ascii=False), meta
+
+        self.client.complete = invented_source
+        self.assertEqual(self.invoke(mode='baseline'), 0)
+        raw = self.read_json(self.output / 'answers.json')[0]
+        self.assertEqual(raw['answer'], '12 единиц')
+        self.assertEqual(raw['evidence'][0]['file'], '006-06_demo_reglament.txt')
+        assessed = self.read_json(self.output / 'evaluation.json')
+        self.assertEqual((assessed['correct'], assessed['lies']), (4, 1))
+        page = (self.output / 'report.html').read_text(encoding='utf-8')
+        self.assertIn('Источник не подтверждён', page)
+        self.assertIn('Файлы, переданные модели (1)', page)
+        self.assertNotIn('Источник: <code>006-06_demo_reglament.txt</code>', page)
+
     def test_unknown_question_fails_before_api_instead_of_grading_a_subset(self):
         with self.assertRaisesRegex(ValueError, 'эталонный вопрос'):
             self.invoke([self.questions[0], 'Кто победил в закупке?'], forbid_api=True)

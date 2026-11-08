@@ -126,6 +126,8 @@ def evaluate_run(run_dir: Path, data_dir: Path) -> dict:
         sys.executable, str(EVALUATOR_PATH), str(answers),
         '--gold', str(gold), '--packages', str(packages), '--out', str(result_csv),
     ]
+    if (inputs := run_dir / 'inputs.json').is_file():
+        command.extend(('--inputs', str(inputs)))
     environment = dict(os.environ, PYTHONIOENCODING='utf-8')
     try:
         result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8',

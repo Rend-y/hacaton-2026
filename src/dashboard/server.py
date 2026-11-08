@@ -11,6 +11,7 @@ import threading
 from urllib.parse import parse_qs, urlsplit
 
 from src import settings
+from src.dashboard.comparison import compare_history_runs
 from src.dashboard.config import DashboardConfig
 from src.dashboard.jobs import Jobs
 from src.dashboard.test_data import TestData
@@ -24,7 +25,8 @@ from src.progress import emit
 
 STATIC = Path(__file__).with_name('static')
 ASSETS = {'/': 'index.html', '/new': 'index.html', '/settings': 'index.html', '/tests': 'index.html',
-          '/style.css': 'style.css', '/app.js': 'app.js', '/test-data.js': 'test-data.js'}
+          '/compare': 'index.html', '/style.css': 'style.css', '/app.js': 'app.js',
+          '/test-data.js': 'test-data.js', '/comparison.js': 'comparison.js'}
 REPORT_FILES = {
     'report.html', 'answers.csv', 'answers.json', 'evaluation.csv', 'evaluation.json',
     'manifest.json', 'prompts.json', 'progress.log',
@@ -137,6 +139,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._file(STATIC / ASSETS[path])
         elif path == '/api/runs':
             self._json(200, self.server.jobs.list())
+        elif path == '/api/compare':
+            params = parse_qs(request.query)
+            try:
+                baseline, verified = (params.get(mode, [''])[0] for mode in ('baseline', 'verified'))
+                self._json(200, compare_history_runs(self.server.jobs.root, baseline, verified))
+            except ValueError as exc:
+                self._json(400, {'error': str(exc)})
+            except OSError:
+                self._json(400, {'error': 'Не удалось прочитать сохранённые данные выбранных запусков.'})
         elif path == '/api/tests':
             try:
                 self._json(200, self.server.tests.list())
@@ -203,15 +214,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 else:
                     self._json(201, self.server.tests.create(*args))
                 return
-            if is_test_run:
+            if is_test_run or is_p01:
                 payload = json.loads(body.decode('utf-8'))
                 if not isinstance(payload, dict):
-                    raise ValueError('Укажите тестовый набор.')
-                run_id = self.server.tests.start(payload.get('name'), self.server.jobs)
-            elif is_p01:
-                data, files, questions = _p01_inputs()
-                run_id = self.server.jobs.start(files, questions, 'verified',
-                                                label='Контрольный тест P01', evaluation_data=data)
+                    raise ValueError('Некорректные параметры запуска теста.')
+                mode = payload.get('mode', 'verified')
+                if mode not in ('baseline', 'verified'):
+                    raise ValueError('Выберите режим обработки.')
+                if is_test_run:
+                    run_id = self.server.tests.start(payload.get('name'), self.server.jobs, mode=mode)
+                else:
+                    data, files, questions = _p01_inputs()
+                    run_id = self.server.jobs.start(files, questions, mode,
+                                                    label='Контрольный тест P01', evaluation_data=data)
             else:
                 files, questions, mode = _form_data(self.headers['Content-Type'], body)
                 run_id = self.server.jobs.start(files, questions, mode)

@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from src.evaluation.runs import _metrics_for_rows, _validated_metrics, comparison_data
+from src.generation.validation import citation_error
 
 
 def _json(path, expected_type=dict, optional=False):
@@ -95,10 +96,20 @@ def build_run_model(run_dir: Path) -> dict:
         if set(detail_map) != {r['id'] for r in exported}:
             raise ValueError('Набор ответов answers.json не совпадает с answers.csv')
         for row in exported:
-            if any(_projection(detail_map[row['id']])[k] != row[k] for k in ('id', 'status', 'answer', 'quote', 'file')):
+            detail = detail_map[row['id']]
+            projection = _projection(detail)
+            raw_answer = detail.get('answer') if row['status'] not in ('не знаю', 'нет в документах') else ''
+            # Старые выгрузки сворачивали пробелы в ответе, новые сохраняют исходный текст.
+            if (row['answer'] not in (projection['answer'], raw_answer)
+                    or any(projection[k] != row[k] for k in ('id', 'status', 'quote', 'file'))):
                 raise ValueError('Ответы answers.json и answers.csv различаются: ' + row['id'])
+            if isinstance(raw_answer, str):
+                row['answer'] = raw_answer
     inputs = _json(root / 'inputs.json', optional=True)
     question_map = {q['id']: q for q in inputs.get('questions', []) if isinstance(q, dict) and isinstance(q.get('id'), str)}
+    documents_by_package = {name: {file: text for file, text in pair[0].items() if isinstance(text, str)}
+                            for name, pair in inputs.get('packages', {}).items()
+                            if isinstance(pair, list) and pair and isinstance(pair[0], dict)}
     selected_ids = manifest.get('question_ids', [r['id'] for r in exported])
     if not isinstance(selected_ids, list) or any(not isinstance(item, str) for item in selected_ids) or len(selected_ids) != len(set(selected_ids)):
         raise ValueError('Некорректные question_ids в manifest.json')
@@ -135,6 +146,8 @@ def build_run_model(run_dir: Path) -> dict:
     trace = _trace(root / 'trace.jsonl', warnings)
     answers = []
     technical_errors = 0
+    invalid_source_count = 0
+    source_audit_conflicts = 0
     for row in exported:
         detail = detail_map.get(row['id'], {})
         question = question_map.get(row['id'], {})
@@ -152,9 +165,22 @@ def build_run_model(run_dir: Path) -> dict:
         evidence = [e for e in evidence if isinstance(e, dict) and isinstance(e.get('file'), str) and isinstance(e.get('quote'), str)]
         if not evidence and row.get('quote'):
             evidence = [{'file': row['file'], 'quote': row['quote']}]
+        documents = documents_by_package.get(question.get('package'))
+        confirmed, source_issues = [], []
+        for item in evidence:
+            issue = ('снимок документов для вопроса отсутствует.' if documents is None
+                     else citation_error(item['file'], item['quote'], documents))
+            if issue:
+                source_issues.append({'file': item['file'], 'reason': issue})
+            else:
+                confirmed.append(item)
+        invalid_source_count += len(source_issues)
+        if source_issues and verdict.get('verdict') == 'верно':
+            source_audit_conflicts += 1
         answers.append({**row, 'question': question.get('question', 'Текст вопроса отсутствует в снимке'),
                         'package': question.get('package', row['id'].split('-')[0]),
-                        'reason': reason if isinstance(reason, str) else '', 'evidence': evidence,
+                        'reason': reason if isinstance(reason, str) else '', 'evidence': confirmed,
+                        'source_issues': source_issues,
                         'verdict': verdict.get('verdict'), 'why': verdict.get('why', ''),
                         'type': verdict.get('type', ''), 'error_type': str(error_type or '')})
     exported_ids = {r['id'] for r in exported}
@@ -164,6 +190,11 @@ def build_run_model(run_dir: Path) -> dict:
                             'package': identifier.split('-')[0], 'status': 'нет строки', 'answer': '',
                             'reason': '', 'evidence': [], 'verdict': row['verdict'], 'why': row['why'],
                             'type': row['type'], 'error_type': ''})
+    if invalid_source_count:
+        warnings.append(f'Неподтверждённых ссылок на источники: {invalid_source_count}. Они отмечены в ответах.')
+    if source_audit_conflicts:
+        warnings.append(f'Сохранённая оценка признала верными {source_audit_conflicts} ответов с неподтверждёнными источниками. '
+                        'Эти оценки требуют повторной проверки.')
     if manifest.get('status') != 'completed' or technical_errors:
         problem = ('Есть технические отказы по %s вопросам.' % technical_errors if technical_errors
                    else 'Успешное завершение запуска не подтверждено.')
@@ -191,7 +222,8 @@ def build_run_model(run_dir: Path) -> dict:
     run = {'label': 'Текущий запуск', 'mode': manifest.get('mode', ''), 'model': manifest.get('model', ''),
            'status': manifest.get('status', ''), 'n_questions': len(selected_ids), 'quality': quality,
            'operations': operations, 'config': {key: manifest[key] for key in config_fields if key in manifest},
-           'answers': answers, 'checks': checks}
+           'answers': answers, 'checks': checks, 'source_audit_conflicts': source_audit_conflicts,
+           'document_names': sorted({name for documents in documents_by_package.values() for name in documents})}
     files = ['answers.csv', 'answers.json', 'evaluation.csv', 'evaluation.json', 'manifest.json', 'prompts.json', 'progress.log']
     return {'title': 'Отчёт о проверке ответов ИИ', 'kind': 'run', 'generated_at': _now(),
             'warnings': list(dict.fromkeys(warnings)), 'runs': [run], 'comparison': None,
