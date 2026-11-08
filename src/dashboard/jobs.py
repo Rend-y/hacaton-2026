@@ -49,7 +49,7 @@ class Jobs:
         self.active = set()
         self.lock = threading.Lock()
 
-    def start(self, files, questions, mode, *, label=None, evaluation_data=None, snapshot_package=None):
+    def start(self, files, questions, mode, *, label=None, evaluation_data=None, snapshot_package=None, kind=None):
         environ = self.config.snapshot()
         now = datetime.now(timezone.utc)
         run_id = now.strftime('%Y%m%d-%H%M%S') + '-' + uuid4().hex[:12] + '-web'
@@ -71,7 +71,7 @@ class Jobs:
             path.write_bytes(content)
             documents.append(str(path))
         job = {'status': 'running', 'mode': mode, 'created_at': now.isoformat(),
-               'kind': 'test' if evaluation_data else 'manual',
+               'kind': kind or ('test' if evaluation_data else 'manual'),
                'total': len(questions), 'label': label or files[0][0], 'file_count': len(files)}
         args = QueryOptions(attachment=documents, prompt=questions, mode=mode)
         with self.lock:

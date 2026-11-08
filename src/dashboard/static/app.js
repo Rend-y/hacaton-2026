@@ -11,7 +11,7 @@ const statuses = new Map([
   ["failed", "Ошибка"],
   ["unknown", "Статус неизвестен"],
 ]);
-const runKinds = new Map([["manual", "Вручную"], ["cli", "CLI"], ["benchmark", "check-all"], ["test", "Тестовый набор"]]);
+const runKinds = new Map([["manual", "Вручную"], ["agent", "Агент"], ["cli", "CLI"], ["benchmark", "check-all"], ["test", "Тестовый набор"]]);
 const dateFormat = new Intl.DateTimeFormat("ru", { dateStyle: "short", timeStyle: "short" });
 let previous = "";
 
