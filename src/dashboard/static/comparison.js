@@ -68,12 +68,11 @@ if (page === "compare") {
   function renderReportQuality(data) {
     const before = data.baseline.quality;
     const after = data.verified.quality;
-    byId("comparison-trust-chart").replaceChildren(
-      chartBar("Baseline", displayedIndex(before?.index), 100, "baseline"),
-      chartBar("Verified", displayedIndex(after?.index), 100, "verified"),
-    );
+    for (const [mode, report] of [["baseline", before], ["verified", after]]) {
+      const index = displayedIndex(report?.index);
+      byId(`comparison-trust-${mode}`).textContent = index == null ? "—" : number.format(index);
+    }
     const note = [data.quality_note];
-    if (!data.quality && (before || after)) note.push("Индексы показаны отдельно по сохранённым отчётам. Разница недоступна.");
     if (!before || !after) note.push(`Нет сохранённой оценки: ${!before && !after ? "Baseline и Verified" : !before ? "Baseline" : "Verified"}.`);
     if ([before, after].some((report) => report?.index < 0 || Object.values(report?.by_type ?? {}).some((group) => group?.index < 0))) {
       note.push("Отрицательные индексы из отчётов показаны как 0 на этой шкале. Исходные значения доступны в отчётах.");
@@ -82,8 +81,9 @@ if (page === "compare") {
       const conflicts = data[mode].source_audit_conflicts;
       if (conflicts) note.push(`${label}: верных по старой оценке с неподтверждёнными источниками — ${number.format(conflicts)}.`);
     }
-    note.push("Затраты указаны за весь запуск.");
-    byId("comparison-quality-note").textContent = note.filter(Boolean).join(" ");
+    const qualityNote = byId("comparison-quality-note");
+    qualityNote.textContent = note.filter(Boolean).join(" ");
+    qualityNote.hidden = !qualityNote.textContent;
 
     const categories = [...new Set([...Object.keys(before?.by_type ?? {}), ...Object.keys(after?.by_type ?? {})])].sort();
     byId("comparison-categories").hidden = !categories.length;
@@ -205,8 +205,6 @@ if (page === "compare") {
         rows.push(metricRow(label, baseline?.[key], verified?.[key], showDelta));
       }
     };
-    rows.push(metricRow("Индекс доверия (разница в п.п.)", displayedIndex(data.baseline.quality?.index),
-      displayedIndex(data.verified.quality?.index), Boolean(data.quality)));
     addMetrics([["n", "Оценено вопросов"], ["correct", "Верные"],
       ["careful", "Осторожные"], ["lies", "Ошибочные"]], data.baseline.quality, data.verified.quality, Boolean(data.quality));
     addMetrics([["elapsed_seconds", "Время, с"], ["requests", "Запросы к API"], ["prompt_tokens", "Токены входа"],

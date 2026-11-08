@@ -72,6 +72,14 @@
           <p id="comparison-error" class="notice" role="alert" hidden></p>
         </form>
         <div id="comparison-results" class="comparison-results" hidden>
+          <section class="panel comparison-panel comparison-trust" aria-labelledby="trust-title">
+            <h2 id="trust-title">Индекс доверия</h2>
+            <dl class="comparison-metrics comparison-trust-values">
+              <div><dt>Baseline</dt><dd id="comparison-trust-baseline">—</dd></div>
+              <div><dt>Verified</dt><dd id="comparison-trust-verified">—</dd></div>
+            </dl>
+            <p id="comparison-quality-note" class="hint" hidden></p>
+          </section>
           <section class="panel comparison-panel" aria-labelledby="coverage-title">
             <div class="comparison-heading"><h2 id="coverage-title">Общие вопросы</h2><div id="comparison-links" class="test-actions"></div></div>
             <dl id="comparison-coverage" class="comparison-metrics"></dl>
@@ -84,12 +92,7 @@
           </section>
           <section class="panel comparison-panel" aria-labelledby="quality-title">
             <h2 id="quality-title">Оценка и затраты</h2>
-            <p id="comparison-quality-note" class="hint"></p>
-            <div class="comparison-chart">
-              <h3>Индекс доверия по отчётам</h3>
-              <div id="comparison-trust-chart" class="comparison-chart-bars"></div>
-              <p class="hint">Шкала от 0 до 100.</p>
-            </div>
+            <p class="hint">Затраты указаны за весь запуск.</p>
             <div id="comparison-metrics" class="comparison-table comparison-summary"></div>
             <details id="comparison-categories" class="comparison-categories" hidden>
               <summary>Индекс доверия по типам вопросов</summary>

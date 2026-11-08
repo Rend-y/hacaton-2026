@@ -107,10 +107,13 @@ input::file-selector-button:hover { background: #dce7ff; }
 #add-test-case, .remove-test-case { justify-self: start; }
 .comparison-results { display: grid; gap: 16px; margin-top: 16px; }
 .comparison-panel { display: grid; gap: 16px; min-width: 0; padding: clamp(16px, 3vw, 24px); }
+.comparison-trust { border-top: 3px solid var(--blue); }
+.comparison-trust h2 { font-size: 22px; }
 .comparison-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 14px; }
 .comparison-grid > * { min-width: 0; }
 .comparison-heading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px 16px; }
 .comparison-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 12px; margin: 0; }
+.comparison-trust-values { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .comparison-metrics div, .comparison-answer { padding: 12px; background: var(--canvas); border: 1px solid var(--line); border-radius: 8px; }
 .comparison-metrics dt { color: var(--muted); font-size: 13px; }
 .comparison-metrics dd { margin: 3px 0 0; font-size: 25px; font-weight: 650; font-variant-numeric: tabular-nums; }
