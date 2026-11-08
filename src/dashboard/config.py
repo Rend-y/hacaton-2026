@@ -8,6 +8,10 @@ from src.generation.client import validate_base_url
 from src.settings import GENERATION_DEFAULTS, RunOptions, question_batch_limit, read_env
 
 
+INPUT_RETENTION_KEY = 'RUN_INPUT_RETENTION_HOURS'
+DEFAULT_INPUT_RETENTION_HOURS = 24
+
+
 class DashboardConfig:
     def __init__(self, path: Path):
         self.path = path
@@ -19,6 +23,18 @@ class DashboardConfig:
     def snapshot(self):
         with self.lock:
             return {**GENERATION_DEFAULTS, **read_env(self.path), **self._overrides()}
+
+    def input_retention_hours(self):
+        with self.lock:
+            values = read_env(self.path, keys=(INPUT_RETENTION_KEY,))
+            raw = os.environ.get(INPUT_RETENTION_KEY, values.get(INPUT_RETENTION_KEY, DEFAULT_INPUT_RETENTION_HOURS))
+        try:
+            hours = int(raw)
+        except ValueError:
+            hours = -1
+        if hours < 0:
+            raise ValueError(f'{INPUT_RETENTION_KEY} должен быть целым числом от 0.')
+        return hours
 
     def public(self):
         with self.lock:

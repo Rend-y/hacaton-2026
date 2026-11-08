@@ -23,7 +23,7 @@ GENERATION_DEFAULTS = {
 }
 
 
-def read_env(path: Path) -> dict[str, str]:
+def read_env(path: Path, *, keys=GENERATION_DEFAULTS) -> dict[str, str]:
     """Читает настройки из .env без изменения окружения процесса."""
     try:
         lines = path.read_text(encoding='utf-8-sig').splitlines()
@@ -33,7 +33,7 @@ def read_env(path: Path) -> dict[str, str]:
     for line in lines:
         key, sep, value = line.partition('=')
         key = key.strip()
-        if sep and key in GENERATION_DEFAULTS:
+        if sep and key in keys:
             values.setdefault(key, value.strip().strip('\"\''))
     return values
 

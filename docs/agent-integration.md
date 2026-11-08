@@ -79,7 +79,6 @@ assert rejected["status"] == "не знаю"
 Пример адаптера для доверенного Python-бэкенда. До вызова бэкенд должен сопоставить идентификаторы вложений с разрешёнными локальными файлами. `runs_dir` задаёт бэкенд. Эта папка должна существовать.
 
 ```python
-import json
 from pathlib import Path
 from uuid import uuid4
 
@@ -91,7 +90,7 @@ def answer_from_documents(document_paths, questions, runs_dir):
     run_id = uuid4().hex
     output = Path(runs_dir).resolve() / run_id
 
-    exit_code = run_query(
+    run_query(
         QueryOptions(
             attachment=[str(path) for path in document_paths],
             prompt=questions,
@@ -100,15 +99,24 @@ def answer_from_documents(document_paths, questions, runs_dir):
         output=output,
     )
 
-    return {
-        "run_id": run_id,
-        "status": "completed" if exit_code == 0 else "completed_with_errors",
-        "answers": json.loads((output / "answers.json").read_text(encoding="utf-8")),
-        "report": "report.html",
+    artifacts = {
+        "answers.json": "Структурированные ответы и цитаты.",
+        "answers.csv": "Таблица ответов.",
+        "report.html": "Отчёт для просмотра в браузере.",
+        "manifest.json": "Статус, настройки и статистика запуска.",
+        "inputs.json": "Вопросы и извлечённый текст источников.",
+        "prompts.json": "Системные инструкции режимов ответа.",
+        "progress.log": "Хронология обработки.",
+        "trace.jsonl": "Подробные события проверки и исправлений.",
     }
+    return [
+        {"path": str(output / name), "description": description}
+        for name, description in artifacts.items()
+        if (output / name).is_file()
+    ]
 ```
 
-Для внешнего инструмента используйте контракт `document_ids` и `questions` на входе. Возвращайте `run_id`, статус и ответы со ссылками на доступные пользователю источники. Ошибки чтения, конфигурации или запуска переводите в явный статус ошибки. Для длительных обработок разделите интерфейс на запуск и получение результата по `run_id`. В существующем бэкенде эти операции можно зарегистрировать как функции агента, а при поддержке MCP представить как инструменты. [Спецификация MCP Tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)
+Для внешнего инструмента используйте контракт `document_ids` и `questions` на входе. Передавайте файлы запуска с описаниями, чтобы следующий шаг мог выбрать нужные артефакты. Если агент работает на другом хосте, заменяйте локальные пути ссылками на выдачу файлов с проверкой доступа. Ошибки чтения, конфигурации или запуска переводите в явный статус ошибки. Для длительных обработок разделите интерфейс на запуск и получение файлов по `run_id`. В существующем бэкенде эти операции можно зарегистрировать как функции агента, а при поддержке MCP представить как инструменты. [Спецификация MCP Tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)
 
 HTTP-маршруты дашборда обслуживают локальный браузер. Для общей AI-системы размещайте адаптер за её авторизацией. Проверяйте права на документы и отчёты при каждом обращении, храните ключ модели на сервере и отправляйте провайдеру только разрешённые документы. Отображайте ссылки через сервер выдачи артефактов с проверкой прав по `run_id`.
 

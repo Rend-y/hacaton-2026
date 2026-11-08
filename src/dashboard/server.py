@@ -3,9 +3,11 @@ from email import policy
 from email.parser import BytesParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import logging
 import mimetypes
 from pathlib import Path, PureWindowsPath
 import re
+import threading
 from urllib.parse import parse_qs, urlsplit
 
 from src import settings
@@ -29,6 +31,7 @@ REPORT_FILES = {
 }
 BODY_LIMIT = MAX_TOTAL_BYTES + 10 * 1024 * 1024
 JSON_LIMIT = 32 * 1024
+INPUT_CLEANUP_INTERVAL_SECONDS = 15 * 60
 
 
 def _multipart_data(content_type, body, field_names):
@@ -227,8 +230,23 @@ def serve(port):
     if not 1 <= port <= 65535:
         raise ValueError('Укажите порт от 1 до 65535.')
     with DashboardServer(port, settings.ROOT / 'runs') as server:
+        stopped = threading.Event()
+
+        def cleanup_inputs():
+            while not stopped.is_set():
+                try:
+                    server.jobs.cleanup_inputs(server.config.input_retention_hours())
+                except (OSError, ValueError) as exc:
+                    logging.warning('Очистка временных файлов пропущена: %s', exc)
+                stopped.wait(INPUT_CLEANUP_INTERVAL_SECONDS)
+
+        cleaner = threading.Thread(target=cleanup_inputs, name='run-input-cleanup', daemon=True)
+        cleaner.start()
         emit(f'Дашборд открыт на http://127.0.0.1:{server.server_port}')
         try:
             server.serve_forever()
         except KeyboardInterrupt:
             emit('Дашборд остановлен.')
+        finally:
+            stopped.set()
+            cleaner.join()

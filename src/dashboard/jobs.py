@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 import json
 import logging
 from pathlib import Path
-from shutil import copyfile
+import re
+from shutil import copyfile, rmtree
 import threading
 import time
 from uuid import uuid4
@@ -12,6 +13,10 @@ from src.files.run_storage import write_json
 from src.generation.client import ApiError
 from src.settings import QueryOptions
 from src.workflows.query import run_query
+
+
+WEB_RUN_NAME = re.compile(r'\d{8}-\d{6}-[a-f0-9]{12}-web', re.ASCII)
+FINISHED_STATUSES = ('completed', 'completed_with_errors', 'failed')
 
 
 def _read_object(path):
@@ -95,6 +100,35 @@ class Jobs:
                 write_json(self.metadata / run_id / 'job.json', {**job, **result})
             finally:
                 self.active.remove(run_id)
+
+    def cleanup_inputs(self, retention_hours):
+        """Удаляет только временные входы запусков с подтверждённым завершением."""
+        if retention_hours <= 0 or self.metadata.resolve() != self.metadata or not self.metadata.is_dir():
+            return
+        cutoff = time.time_ns() - retention_hours * 3600 * 1_000_000_000
+        for work in self.metadata.iterdir():
+            try:
+                self._cleanup_run_inputs(work, cutoff)
+            except OSError as exc:
+                logging.warning('Не удалось очистить временные файлы запуска %s: %s', work.name, exc)
+
+    def _cleanup_run_inputs(self, work, cutoff):
+        if not WEB_RUN_NAME.fullmatch(work.name) or work.resolve() != work or not work.is_dir():
+            return
+        job = work / 'job.json'
+        if job.resolve() != job or not job.is_file() or job.stat().st_mtime_ns > cutoff:
+            return
+        # Терминальный статус записывается после последнего обращения к входным файлам.
+        # Он защищает активные запуски и при нескольких процессах дашборда.
+        if _read_object(job).get('status') not in FINISHED_STATUSES:
+            return
+        for path in work.iterdir():
+            if path.resolve() != path:
+                continue
+            if path.is_dir() and (path.name == 'evaluation' or re.fullmatch(r'[0-9]+', path.name)):
+                rmtree(path)
+            elif path.name == 'questions.json' and path.is_file():
+                path.unlink()
 
     def list(self):
         directories = list(self.root.iterdir()) if self.root.is_dir() else []
