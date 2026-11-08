@@ -285,7 +285,7 @@
         <header class="page-heading">
           <div>
             <h1>Настройки</h1>
-            <p>Подключение к модели и лимиты для новых обработок.</p>
+            <p>Подключение к модели, лимиты обработки и срок хранения входных файлов.</p>
           </div>
         </header>
         <form id="settings-form" class="panel launch-form" action="/api/settings" method="post" autocomplete="off">
@@ -341,6 +341,15 @@
                   <label for="context-limit">Лимит токенов контекста</label>
                   <input id="context-limit" name="CONTEXT_TOKEN_LIMIT" type="number" min="2" step="1" required>
                 </div>
+              </div>
+            </div>
+            <div class="settings-group">
+              <h2>Хранение файлов</h2>
+              <div class="field">
+                <label for="input-retention">Срок хранения входных файлов, часы</label>
+                <input id="input-retention" name="RUN_INPUT_RETENTION_HOURS" type="number" min="0" step="1" required
+                       aria-describedby="input-retention-hint">
+                <p id="input-retention-hint" class="hint">Через сколько часов удалять входные копии завершённых прогонов. 0 — не удалять.</p>
               </div>
             </div>
           </fieldset>
