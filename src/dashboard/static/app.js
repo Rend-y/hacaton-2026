@@ -2,7 +2,7 @@
 
 const byId = (id) => document.getElementById(id);
 const testEditRoute = /^\/tests\/([^/]+)\/edit$/.exec(location.pathname);
-const page = new Map([["/new", "new"], ["/settings", "settings"], ["/tests", "tests"], ["/tests/create", "test-editor"], ["/compare", "compare"], ["/mcp", "mcp"]])
+const page = new Map([["/new", "new"], ["/settings", "settings"], ["/tests", "tests"], ["/tests/create", "test-editor"], ["/compare", "compare"], ["/agent", "agent"], ["/mcp", "mcp"]])
   .get(location.pathname) ?? (testEditRoute ? "test-editor" : "runs");
 const statuses = new Map([
   ["running", "В процессе"],
@@ -39,6 +39,8 @@ if (page === "new") {
   for (const button of byId("mcp-page").querySelectorAll("[data-mcp-copy]")) {
     button.addEventListener("click", copyMcpSnippet);
   }
+} else if (page === "agent") {
+  document.title = "Агент · Ответы по документам";
 } else if (page === "runs") {
   refreshRuns();
 }
