@@ -6,6 +6,7 @@
   <title>Обработки · Ответы по документам</title>
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
+  <script src="/agent.js" defer></script>
   <script src="/test-data.js" defer></script>
   <script src="/comparison.js" defer></script>
 </head>
@@ -26,6 +27,7 @@
       </button>
       <nav id="sidebar-nav" aria-label="Разделы">
         <a href="/" id="runs-link"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" /></svg>Обработки</a>
+        <a href="/agent" id="agent-link"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 6h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H9l-4 3v-3H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" /></svg>Агент</a>
         <a href="/new" id="new-link"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>Новая обработка</a>
         <a href="/tests" id="tests-link"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 3h6m-5 0v7l-5 9a1 1 0 0 0 1 2h12a1 1 0 0 0 1-2l-5-9V3M8 15h8" /></svg>Тестовые наборы</a>
         <a href="/compare" id="compare-link"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 19V11m7 8V5m7 14v-5M3 21h18" /></svg>Сравнение запусков</a>
@@ -149,6 +151,23 @@
             </div>
           </details>
         </div>
+      </section>
+
+      <section id="agent-page" class="is-empty" hidden>
+        <div id="agent-log" class="agent-log"></div>
+        <form id="agent-form" class="agent-composer">
+          <div id="agent-drop" class="agent-drop">
+            <ul id="agent-files" class="agent-files" hidden></ul>
+            <label class="visually-hidden" for="agent-prompt">Вопрос агенту</label>
+            <textarea id="agent-prompt" rows="2" placeholder="Напишите вопрос. TXT можно прикрепить кнопкой или перетащить сюда"></textarea>
+            <div class="agent-actions">
+              <button id="agent-attach" class="button secondary" type="button"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>Прикрепить txt</button>
+              <button id="agent-send" class="button primary" type="submit"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" /></svg>Отправить</button>
+            </div>
+            <input id="agent-file-input" type="file" accept=".txt,text/plain" multiple hidden>
+          </div>
+          <p id="agent-error" class="notice" role="alert" hidden></p>
+        </form>
       </section>
 
       <section id="new-page" hidden>

@@ -11,6 +11,7 @@ import threading
 from urllib.parse import parse_qs, urlsplit
 
 from src import settings
+from src.dashboard.agent import AgentSessions, agent_prompt
 from src.dashboard.comparison import compare_history_runs
 from src.dashboard.config import DashboardConfig
 from src.dashboard.jobs import Jobs
@@ -25,7 +26,8 @@ from src.progress import emit
 
 STATIC = Path(__file__).with_name('static')
 ASSETS = {'/': 'index.html', '/new': 'index.html', '/settings': 'index.html', '/tests': 'index.html',
-          '/tests/create': 'index.html', '/compare': 'index.html', '/style.css': 'style.css', '/app.js': 'app.js',
+          '/tests/create': 'index.html', '/compare': 'index.html', '/agent': 'index.html',
+          '/style.css': 'style.css', '/app.js': 'app.js', '/agent.js': 'agent.js',
           '/test-data.js': 'test-data.js', '/comparison.js': 'comparison.js'}
 REPORT_FILES = {
     'report.html', 'answers.csv', 'answers.json', 'evaluation.csv', 'evaluation.json',
@@ -78,6 +80,17 @@ def _form_data(content_type, body):
     return files, questions, mode
 
 
+def _agent_form(content_type, body):
+    files, fields = _multipart_data(content_type, body, ('prompt',))
+    prompt = agent_prompt(fields.get('prompt', ''))
+    if not files:
+        raise ValueError('Прикрепите хотя бы один txt-файл.')
+    for name, _content in files:
+        if Path(name).suffix.lower() != '.txt':
+            raise ValueError('Можно прикрепить только txt-файлы.')
+    return files, prompt
+
+
 def _p01_inputs():
     data = settings.ROOT / 'data' / 'public'
     documents, errors = read_package(data, 'P01')
@@ -93,6 +106,7 @@ class DashboardServer(ThreadingHTTPServer):
         root = root.resolve()
         self.config = DashboardConfig(root.parent / '.env')
         self.jobs = Jobs(root, self.config)
+        self.agent = AgentSessions(self.jobs)
         self.tests = TestData(root.parent / 'test-data')
         self.hosts = {f'127.0.0.1:{self.server_port}', f'localhost:{self.server_port}'}
         if self.server_port == 80:
@@ -141,6 +155,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._file(STATIC / 'index.html')
         elif path == '/api/runs':
             self._json(200, self.server.jobs.list())
+        elif path.startswith('/api/agent/'):
+            try:
+                self._json(200, self.server.agent.view(path.removeprefix('/api/agent/')))
+            except ValueError as exc:
+                self._json(404, {'error': str(exc)})
         elif path == '/api/compare':
             params = parse_qs(request.query)
             try:
@@ -186,8 +205,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         is_test_create = self.path == '/api/tests'
         is_test_edit = self.path == '/api/tests/edit'
         is_test_run = self.path == '/api/tests/run'
+        is_agent = self.path == '/api/agent'
         is_json = is_settings or is_p01 or is_test_run
-        if not is_json and not is_test_create and not is_test_edit and self.path != '/api/runs':
+        if not is_json and not is_test_create and not is_test_edit and not is_agent and self.path != '/api/runs':
             self._json(404, {'error': 'Страница не найдена.'})
             return
         try:
@@ -216,7 +236,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 else:
                     self._json(201, self.server.tests.create(*args))
                 return
-            if is_test_run or is_p01:
+            if is_agent:
+                files, prompt = _agent_form(self.headers['Content-Type'], body)
+                run_id = self.server.agent.start(files, prompt)
+            elif is_test_run or is_p01:
                 payload = json.loads(body.decode('utf-8'))
                 if not isinstance(payload, dict):
                     raise ValueError('Некорректные параметры запуска теста.')

@@ -2,7 +2,7 @@
 
 const byId = (id) => document.getElementById(id);
 const testEditRoute = /^\/tests\/([^/]+)\/edit$/.exec(location.pathname);
-const page = new Map([["/new", "new"], ["/settings", "settings"], ["/tests", "tests"], ["/tests/create", "test-editor"], ["/compare", "compare"]])
+const page = new Map([["/new", "new"], ["/settings", "settings"], ["/tests", "tests"], ["/tests/create", "test-editor"], ["/compare", "compare"], ["/agent", "agent"]])
   .get(location.pathname) ?? (testEditRoute ? "test-editor" : "runs");
 const statuses = new Map([
   ["running", "В процессе"],
@@ -34,6 +34,8 @@ if (page === "new") {
   document.title = "Настройки · Ответы по документам";
   byId("settings-form").addEventListener("submit", saveSettings);
   loadSettings();
+} else if (page === "agent") {
+  document.title = "Агент · Ответы по документам";
 } else if (page === "runs") {
   refreshRuns();
 }
