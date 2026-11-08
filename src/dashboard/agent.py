@@ -133,7 +133,7 @@ class AgentSessions:
 
     def start(self, files, prompt):
         label = ' '.join(prompt.split())[:80] or 'Агент'
-        return self.jobs.start(files, [prompt], 'verified', label=label)
+        return self.jobs.start(files, [prompt], 'verified', label=label, kind='agent')
 
     def view(self, run_id):
         if not WEB_RUN_NAME.fullmatch(run_id):
