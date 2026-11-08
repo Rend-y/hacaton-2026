@@ -1,4 +1,4 @@
-"""Оценщик кейса «ИИ, который не обманывает». Нужен только Python 3.8+, без библиотек.
+"""Локальный оценщик ответов по эталону. Требуется Python 3.8+.
 
 python check.py answers.csv
 python check.py answers.csv --gold answers_public.json --packages packages --out result.csv

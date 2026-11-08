@@ -36,7 +36,7 @@ if ($WithPdf) {
 $configPath = Join-Path $projectRoot '.env'
 if (-not (Test-Path -LiteralPath $configPath)) {
   Copy-Item -LiteralPath (Join-Path $projectRoot '.env.example') -Destination $configPath
-  Write-Output 'Создан .env: укажите в нём API-ключ для генерации.'
+  Write-Output 'Создан .env. Укажите BASE_URL, MODEL и API_KEY для генерации.'
 }
 Write-Output 'Готово. Справка: .\run.ps1 --help'
 if ($env:PYTHON_EXECUTABLE -and $env:PYTHON_EXECUTABLE -ne $environmentPython) {

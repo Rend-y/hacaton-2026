@@ -25,7 +25,7 @@ def run_public(mode='verified'):
     output = settings.ROOT / 'runs' / (datetime.now().strftime('%Y%m%d-%H%M%S-%f') + '-all-' + mode)
     options = settings.RunOptions.from_env(mode, output)
     code = pipeline.run_groups(options, questions, documents, batch_limit=batch_limit)
-    emit('Все группы обработаны. Проверяем единую выгрузку официальным check.py.')
+    emit('Все группы обработаны. Проверяем ответы по эталону.')
     evaluate_run(output, data)
     emit('Общий HTML-отчёт: ' + str(write_run_report(output)))
     return code

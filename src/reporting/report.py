@@ -46,7 +46,7 @@ def _flat(value):
 
 
 def _projection(answer):
-    """Сверяет подробный JSON с форматом CSV, который реально сдаётся организатору."""
+    """Сверяет подробный JSON с CSV, который используется для оценки."""
     status = answer.get('status') if isinstance(answer.get('status'), str) else ''
     evidence = answer.get('evidence')
     first = evidence[0] if isinstance(evidence, list) and evidence and isinstance(evidence[0], dict) else {}
@@ -128,7 +128,7 @@ def build_run_model(run_dir: Path) -> dict:
             warnings.append('Оценщик проверил весь эталон: %s вопросов; в запуск выбрано %s. Пропуски входят в знаменатель.' % (metrics['n'], len(selected_ids)))
         outside = set(selected_ids) - set(verdicts)
         if outside:
-            warnings.append('Вопросов вне эталона: %s. Их качество официальным оценщиком не измерено.' % len(outside))
+            warnings.append('Вопросов вне эталона: %s. Они не входят в оценку.' % len(outside))
     else:
         warnings.append('Оценка по эталону не выполнена. Статусы модели и локальные проверки не являются измеренной точностью.')
 

@@ -103,8 +103,8 @@ def _type_table(run):
             continue
         rows.append('<tr><th scope="row">%s</th><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td class="strong">%s</td></tr>' % (
             _e(category), *[_e(_number(values.get(key), 1 if key == 'index' else 0)) for key in ('n', 'correct', 'lies', 'careful', 'index')]))
-    return '''<section class="panel"><div class="section-line"><h3>По типам вопросов</h3><span class="muted">Классификация организаторов</span></div>
-<div class="table-wrap"><table><caption class="sr-only">Официальная оценка по типам вопросов</caption><thead><tr>
+    return '''<section class="panel"><div class="section-line"><h3>По типам вопросов</h3><span class="muted">Категории эталонного набора</span></div>
+<div class="table-wrap"><table><caption class="sr-only">Оценка по типам вопросов</caption><thead><tr>
 <th scope="col">Тип вопроса</th><th scope="col">Всего</th><th scope="col">Верно</th><th scope="col">Ошибки</th><th scope="col">Осторожно</th><th scope="col">Индекс</th>
 </tr></thead><tbody>%s</tbody></table></div></section>''' % ''.join(rows)
 
@@ -145,7 +145,7 @@ def _answer_detail(answer):
     if answer.get('reason'):
         body += '<h4>Основание, сохранённое системой</h4><p>%s</p>' % _e(answer['reason'])
     if answer.get('verdict'):
-        body += '<div class="assessment"><h4>Вердикт официального оценщика</h4><p>%s%s</p></div>' % (
+        body += '<div class="assessment"><h4>Оценка по эталону</h4><p>%s%s</p></div>' % (
             _badge(answer['verdict']), ' — ' + _e(answer['why']) if answer.get('why') else '')
     if answer.get('error_type'):
         body += '<p class="technical-note">Техническая причина: <code>%s</code></p>' % _e(answer['error_type'])
@@ -205,7 +205,7 @@ def _checks(run):
             _badge(after.get('status')) if after.get('status') else ''))
     visible = ''.join(cards[:3])
     remaining = '<details class="more-checks"><summary>Остальные срабатывания: %s</summary>%s</details>' % (len(cards) - 3, ''.join(cards[3:])) if len(cards) > 3 else ''
-    return '<section class="panel"><div class="section-line"><h3>Срабатывания локальных проверок</h3><span class="muted">%s событий</span></div><p class="section-note muted">Показано, что именно отклонил код и какой итог был сохранён. Срабатывание проверки само по себе не является вердиктом официального оценщика.</p>%s%s</section>' % (
+    return '<section class="panel"><div class="section-line"><h3>Срабатывания локальных проверок</h3><span class="muted">%s событий</span></div><p class="section-note muted">Здесь видно, что отклонила проверка и какой ответ сохранился. Оценка по эталону проводится отдельно.</p>%s%s</section>' % (
         len(cards), visible, remaining)
 
 
@@ -351,12 +351,12 @@ def render_report(model: dict) -> str:
     navigation.append('<a href="#method">Методика и файлы</a>')
     method = '''<section id="method" class="report-section"><div class="section-title"><div><span class="eyebrow">Как читать результат</span><h2>Методика и воспроизводимость</h2></div></div>
 <div class="panel methods"><div class="formula">Индекс доверия = (верные ответы − ошибочные ответы) / все вопросы × 100</div>
-<div class="method-copy"><p>Индекс находится в диапазоне от −100 до 100. Вердикты «верно», «обман» и «осторожно» поступают из официального оценщика. «Обман» — название категории ошибок в его формате; осторожные ответы не добавляют и не отнимают баллы.</p>
-<p>Знаменатель официальной оценки включает все вопросы переданного эталона. Пропущенные ответы считаются осторожными. Количество вопросов в запуске может отличаться от количества вопросов в оценке.</p>
+<div class="method-copy"><p>Индекс находится в диапазоне от −100 до 100. Оценка по эталону использует три вердикта. «Верно» добавляет балл, «обман» обозначает ошибку и отнимает балл, «осторожно» даёт ноль баллов.</p>
+<p>Знаменатель включает все вопросы, переданные на оценку. Пропущенные ответы считаются осторожными. Количество вопросов в запуске может отличаться от количества вопросов в оценке.</p>
 <p>Цитаты, числа и формат проверяются локальным кодом. Смысловая относимость, редакции документов и полнота поиска в базовой версии зависят от модели. Прохождение внутренних проверок не гарантирует правильность ответа.</p>
-<p>Эталоны используются только после генерации. Сравнение «было/стало» допускается для совместимых запусков на одной модели и одинаковых входных данных. Индекс доверия не равен итоговому баллу жюри хакатона.</p></div>%s%s</div></section>''' % (
+<p>Эталоны используются только после генерации. Сравнение «было/стало» допускается для совместимых запусков на одной модели и одинаковых входных данных.</p></div>%s%s</div></section>''' % (
         ''.join(_configuration(run) for run in runs), _sources(model))
-    hero = 'Сравнение исходной системы и режима с проверками по сохранённым результатам.' if is_comparison else 'Ответы, доказательства и измерения одного запуска. Официальная оценка показана только при наличии результатов проверки по эталону.'
+    hero = 'Сравнение исходной системы и режима с проверками по сохранённым результатам.' if is_comparison else 'Ответы, цитаты и статистика одного запуска. Если выполнена проверка по эталону, отчёт показывает её результаты.'
     return '''<!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">

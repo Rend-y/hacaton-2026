@@ -69,7 +69,7 @@ def abstain(question, reason):
 
 
 def csv_row(answer):
-    """Преобразует внутренний ответ в пять колонок формата организаторов."""
+    """Преобразует внутренний ответ в пять колонок CSV для оценки."""
     # В CSV помещается одна цитата; остальные основания остаются в JSON и журнале.
     evidence = answer.get('evidence')
     first = evidence[0] if isinstance(evidence, list) and evidence and isinstance(evidence[0], dict) else {}
