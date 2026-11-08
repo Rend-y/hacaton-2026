@@ -45,7 +45,7 @@ def run_groups(options: RunOptions, questions, package_data, source_metadata=Non
     client = Client(environ.get('API_KEY', ''), environ.get('BASE_URL', ''),
                     environ.get('MODEL', ''), options.timeout, options.max_tokens,
                     context_token_limit=options.context_token_limit, max_workers=options.max_workers,
-                    max_requests=options.max_requests)
+                    max_requests=options.max_requests, temperature=options.temperature)
     output.mkdir(parents=True, exist_ok=True)
     progress = RunLog(output / 'progress.log', emit, secrets=(client.key,))
     write_json(output / 'inputs.json', input_data)
@@ -60,7 +60,8 @@ def run_groups(options: RunOptions, questions, package_data, source_metadata=Non
                 stream.write(line + '\n')
 
     started = time.monotonic()
-    manifest = {'model': client.model, 'base_url': client.base_url, 'mode': options.mode, 'temperature': 0,
+    manifest = {'model': client.model, 'base_url': client.base_url, 'mode': options.mode,
+                'temperature': options.temperature,
                 'max_tokens': options.max_tokens, 'context_token_limit': options.context_token_limit,
                 'input_fingerprint': fingerprint, 'timeout_seconds': options.timeout,
                 'question_ids': [q['id'] for q in questions], 'created_at': datetime.now(timezone.utc).isoformat(),

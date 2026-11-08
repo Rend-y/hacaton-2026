@@ -163,6 +163,12 @@
                 <input id="model" name="MODEL" type="text" placeholder="Идентификатор модели у провайдера">
               </div>
               <div class="field">
+                <label for="temperature">Температура модели</label>
+                <input id="temperature" name="TEMPERATURE" type="number" min="0" max="2" step="any" required
+                       aria-describedby="temperature-hint">
+                <p id="temperature-hint" class="hint">От 0 до 2. По умолчанию 0.</p>
+              </div>
+              <div class="field">
                 <label for="api-key">API-ключ</label>
                 <input id="api-key" name="API_KEY" type="password" autocomplete="new-password" aria-describedby="api-key-hint">
                 <p id="api-key-hint" class="hint">Если поле пустое, используется ранее сохранённый ключ.</p>

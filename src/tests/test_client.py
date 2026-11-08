@@ -69,13 +69,15 @@ class ClientTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='client-test-', dir=Path(__file__).resolve().parent) as directory:
             env = Path(directory) / '.env'
             env.write_text('# comment\nAPI_KEY="file-key"\nMODEL=from-file\nBASE_URL=https://example.test/v1\n'
-                           'MAX_QUESTIONS_PER_REQUEST=3\nOTHER_SECRET=ignored\nINVALID_LINE\n', encoding='utf-8-sig')
+                           'MAX_QUESTIONS_PER_REQUEST=3\nTEMPERATURE=0.25\nOTHER_SECRET=ignored\nINVALID_LINE\n',
+                           encoding='utf-8-sig')
             with patch.dict(os.environ, {'API_KEY': 'process-key'}, clear=True):
                 load_env(env)
                 self.assertEqual(os.environ['API_KEY'], 'process-key')
                 self.assertEqual(os.environ['MODEL'], 'from-file')
                 self.assertEqual(os.environ['BASE_URL'], 'https://example.test/v1')
                 self.assertEqual(os.environ['MAX_QUESTIONS_PER_REQUEST'], '3')
+                self.assertEqual(os.environ['TEMPERATURE'], '0.25')
                 self.assertNotIn('OTHER_SECRET', os.environ)
 
     def test_missing_env_file_is_optional(self):
@@ -123,6 +125,12 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(client.stats['successful_requests'], 2)
         self.assertEqual(client.stats['prompt_tokens'], 140)
         self.assertEqual(client.stats['completion_tokens'], 35)
+
+    def test_configured_temperature_is_sent_to_model(self):
+        client = self.make_client(self.completion(), temperature=0.35)
+        client.complete(self.MESSAGES)
+        request, _ = client.opener.calls[0]
+        self.assertEqual(json.loads(request.data)['temperature'], 0.35)
 
     def test_truncated_response_is_rejected_without_http_retry(self):
         client = self.make_client(self.completion('partial', finish='length'))

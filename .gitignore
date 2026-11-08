@@ -7,5 +7,8 @@
 __pycache__/
 *.pyc
 runs/
-/test-data/
+# Общие демонстрационные наборы помечаются именем папки.
+/test-data/*
+!/test-data/P[0-9][0-9] — */
+!/test-data/demo-*/
 comparison/

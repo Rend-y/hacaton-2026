@@ -135,7 +135,7 @@ class QueryTests(unittest.TestCase):
 
     def test_verified_uses_configured_generation_limits(self):
         questions = ['Первый вопрос?', 'Второй вопрос?', 'Третий вопрос?']
-        with patch.dict('os.environ', {'MAX_QUESTIONS_PER_REQUEST': '2', 'TIMEOUT_SECONDS': '30.5',
+        with patch.dict('os.environ', {'MAX_QUESTIONS_PER_REQUEST': '2', 'TIMEOUT_SECONDS': '30.5', 'TEMPERATURE': '0.35',
                                        'MAX_TOKENS': '640', 'CONTEXT_TOKEN_LIMIT': '10000'}):
             result = self.invoke(self.arguments(*questions))
 
@@ -145,11 +145,14 @@ class QueryTests(unittest.TestCase):
         manifest = self.read_json(self.output / 'manifest.json')
         self.assertEqual(manifest['max_questions_per_request'], 2)
         self.assertEqual(manifest['timeout_seconds'], 30.5)
+        self.assertEqual(manifest['temperature'], 0.35)
         self.assertEqual(manifest['max_tokens'], 640)
         self.assertEqual(manifest['context_token_limit'], 10000)
 
     def test_invalid_settings_and_insufficient_context_fail_before_model_request(self):
         for env in ({'MAX_QUESTIONS_PER_REQUEST': '0'}, {'TIMEOUT_SECONDS': 'nan'},
+                    {'TEMPERATURE': 'nan'}, {'TEMPERATURE': 'inf'}, {'TEMPERATURE': 'invalid'},
+                    {'TEMPERATURE': '-0.1'}, {'TEMPERATURE': '2.01'},
                     {'MAX_TOKENS': '0'}, {'CONTEXT_TOKEN_LIMIT': 'abc'}, {'MAX_WORKERS': '0'},
                     {'MAX_TOKENS': '256', 'CONTEXT_TOKEN_LIMIT': '256'},
                     {'MAX_TOKENS': '256', 'CONTEXT_TOKEN_LIMIT': '300'}):

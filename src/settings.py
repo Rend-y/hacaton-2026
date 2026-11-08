@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_TEMPERATURE = 0
 # До 15 минут на одну HTTP-попытку; сетевые повторы учитываются отдельно.
 DEFAULT_TIMEOUT_SECONDS = 900
 # Бюджет ответа включает токены, которые провайдер тратит на рассуждение модели.
@@ -16,6 +17,7 @@ DEFAULT_MAX_QUESTIONS_PER_REQUEST = 5
 DEFAULT_MAX_WORKERS = 1
 GENERATION_DEFAULTS = {
     'BASE_URL': '', 'MODEL': '', 'API_KEY': '', 'MAX_REQUESTS': '',
+    'TEMPERATURE': str(DEFAULT_TEMPERATURE),
     'TIMEOUT_SECONDS': str(DEFAULT_TIMEOUT_SECONDS), 'MAX_TOKENS': str(DEFAULT_MAX_TOKENS),
     'CONTEXT_TOKEN_LIMIT': str(DEFAULT_CONTEXT_TOKEN_LIMIT),
     'MAX_QUESTIONS_PER_REQUEST': str(DEFAULT_MAX_QUESTIONS_PER_REQUEST),
@@ -77,8 +79,11 @@ class RunOptions:
     context_token_limit: int = DEFAULT_CONTEXT_TOKEN_LIMIT
     max_workers: int = DEFAULT_MAX_WORKERS
     max_requests: int | None = None
+    temperature: float = DEFAULT_TEMPERATURE
 
     def __post_init__(self):
+        if not 0 <= self.temperature <= 2:
+            raise ValueError('TEMPERATURE должна быть числом от 0 до 2.')
         if not math.isfinite(self.timeout) or self.timeout <= 0:
             raise ValueError('TIMEOUT_SECONDS должен быть конечным числом больше нуля.')
         if not 0 < self.max_tokens < self.context_token_limit:
@@ -96,9 +101,13 @@ class RunOptions:
             timeout = float(environ.get('TIMEOUT_SECONDS', timeout))
         except ValueError:
             raise ValueError('TIMEOUT_SECONDS должен быть конечным числом больше нуля.') from None
+        try:
+            temperature = float(environ.get('TEMPERATURE', DEFAULT_TEMPERATURE))
+        except ValueError:
+            raise ValueError('TEMPERATURE должна быть числом от 0 до 2.') from None
         max_requests = _positive_env_int(environ, 'MAX_REQUESTS', 0) if environ.get('MAX_REQUESTS') else None
         return cls(mode, output, repair_attempts=repair_attempts,
                    max_tokens=_positive_env_int(environ, 'MAX_TOKENS', max_tokens), timeout=timeout,
                    context_token_limit=_positive_env_int(environ, 'CONTEXT_TOKEN_LIMIT', DEFAULT_CONTEXT_TOKEN_LIMIT),
                    max_workers=_positive_env_int(environ, 'MAX_WORKERS', DEFAULT_MAX_WORKERS),
-                   max_requests=max_requests)
+                   max_requests=max_requests, temperature=temperature)

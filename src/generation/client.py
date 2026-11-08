@@ -14,7 +14,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from src.progress import heartbeat
-from src.settings import DEFAULT_CONTEXT_TOKEN_LIMIT, DEFAULT_MAX_TOKENS, DEFAULT_TIMEOUT_SECONDS, read_env
+from src.settings import (
+    DEFAULT_CONTEXT_TOKEN_LIMIT, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE, DEFAULT_TIMEOUT_SECONDS, read_env,
+)
 
 
 def estimate_request_tokens(messages, max_tokens):
@@ -85,7 +87,8 @@ class RateLimiter:
 class Client:
     """Выполняет запросы к /chat/completions и повторяет только временные сбои."""
     def __init__(self, key, base_url, model, timeout=DEFAULT_TIMEOUT_SECONDS, max_tokens=DEFAULT_MAX_TOKENS,
-                 *, context_token_limit=DEFAULT_CONTEXT_TOKEN_LIMIT, max_workers=2, max_requests=None):
+                 *, context_token_limit=DEFAULT_CONTEXT_TOKEN_LIMIT, max_workers=2, max_requests=None,
+                 temperature=DEFAULT_TEMPERATURE):
         if not key:
             raise ValueError('Set API_KEY in .env or the environment')
         if not base_url:
@@ -96,6 +99,7 @@ class Client:
         self.key = key
         self.base_url = base_url.rstrip('/')
         self.model = model
+        self.temperature = temperature
         self.timeout = timeout
         self.max_tokens = max_tokens
         self.context_token_limit = context_token_limit
@@ -137,7 +141,7 @@ class Client:
         estimate = estimate_request_tokens(messages, self.max_tokens)
         if estimate > self.context_token_limit:
             raise ApiError(f'Estimated request size {estimate} exceeds CONTEXT_TOKEN_LIMIT={self.context_token_limit}')
-        payload = {'model': self.model, 'messages': messages, 'temperature': 0,
+        payload = {'model': self.model, 'messages': messages, 'temperature': self.temperature,
                    'max_tokens': self.max_tokens}
         body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
         for attempt in range(3):
