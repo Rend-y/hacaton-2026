@@ -1,4 +1,4 @@
-"""Проверяет query --evaluate через CLI и настоящий официальный оценщик.
+"""Проверяет сценарий тестового набора с настоящим локальным оценщиком.
 
 Все документы, эталоны и ответы здесь искусственные. Имитируется только модель;
 проверки цитат, запись CSV, сопоставление вопросов и HTML выполняются обычным кодом.
@@ -13,10 +13,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from src import cli
 from src.workflows import pipeline
 from src import settings
 from src.evaluation import reference_data
+from src.evaluation import runs as evaluation
 from src.generation.prompts import BASELINE
 from src.workflows import query
 from src.reporting import report
@@ -111,27 +111,21 @@ class QueryEvaluationCliTests(unittest.TestCase):
 
         return OfflineClient()
 
-    def invoke(self, arguments, forbid_api=False):
+    def invoke(self, questions=None, *, mode='verified', with_reference=True, forbid_api=False):
         api_patch = (patch.object(pipeline, 'Client', side_effect=AssertionError('No API expected'))
                      if forbid_api else patch.object(pipeline, 'Client', return_value=self.client))
         with api_patch, patch.object(settings, 'ROOT', self.root), patch.object(query, 'load_env'), \
              patch.object(pipeline, 'emit'), patch.object(query, '_output_path', return_value=self.output), \
              contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            return cli.main(arguments)
-
-    def arguments(self, questions=None):
-        return ['query', '--atacment', str(self.attachments), '--promt', *(questions or self.questions)]
+            options = settings.QueryOptions(
+                attachment=[str(path) for path in self.attachments.glob('*.txt')],
+                prompt=questions or self.questions, mode=mode,
+            )
+            return query.run_query(options, evaluation_data=self.data if with_reference else None)
 
     @staticmethod
     def read_json(path):
         return json.loads(path.read_text(encoding='utf-8'))
-
-    def test_flag_is_supported_but_optional(self):
-        for suffix, expected in ((['--evaluate'], True), ([], False)):
-            _, arguments, _ = cli.app.parse_args(
-                self.arguments() + suffix, exit_on_error=False, print_error=False)
-            arguments.apply_defaults()
-            self.assertEqual(arguments.arguments['evaluate'], expected)
 
     def test_five_query_answers_are_evaluated_after_generation_not_as_seventy_one(self):
         original_open = Path.open
@@ -147,7 +141,7 @@ class QueryEvaluationCliTests(unittest.TestCase):
             return original_open(path, *args, **kwargs)
 
         with patch.object(Path, 'open', guard_gold):
-            result = self.invoke(self.arguments() + ['--mode', 'verified', '--evaluate'])
+            result = self.invoke()
         self.assertEqual(result, 0)
         self.assertEqual(len(self.requests), 1)
         self.assertTrue(before_evaluation)
@@ -167,12 +161,14 @@ class QueryEvaluationCliTests(unittest.TestCase):
         self.assertNotIn('Оценка по эталону не выполнена', page)
 
     def test_saved_legacy_query_can_be_evaluated_without_api_or_answer_changes(self):
-        self.assertEqual(self.invoke(self.arguments()), 0)
+        self.assertEqual(self.invoke(with_reference=False), 0)
         self.assertFalse((self.output / 'evaluation.json').exists())
         before = {name: (self.output / name).read_bytes()
                   for name in ('answers.csv', 'answers.json', 'manifest.json')}
-        result = self.invoke(['evaluate', '--run', str(self.output), '--data', str(self.data)], forbid_api=True)
-        self.assertEqual(result, 0)
+        with patch.object(pipeline, 'Client', side_effect=AssertionError('No API expected')), \
+             contextlib.redirect_stdout(io.StringIO()):
+            evaluation.evaluate_saved_run(self.output, self.data)
+            report.write_run_report(self.output)
         self.assertEqual(len(self.requests), 1)
         for name, content in before.items():
             self.assertEqual((self.output / name).read_bytes(), content)
@@ -190,7 +186,7 @@ class QueryEvaluationCliTests(unittest.TestCase):
 
         self.client.complete = wrong_first_answer
         with patch.dict('os.environ', {'MAX_QUESTIONS_PER_REQUEST': '5', 'MAX_WORKERS': '1'}):
-            result = self.invoke(self.arguments() + ['--mode', 'baseline', '--evaluate'])
+            result = self.invoke(mode='baseline')
         self.assertEqual(result, 0)
         self.assertEqual(len(self.requests), 1)
         self.assertEqual(self.read_json(self.output / 'manifest.json')['mode'], 'baseline')
@@ -200,14 +196,14 @@ class QueryEvaluationCliTests(unittest.TestCase):
         self.assertEqual(assessed['index'], 60)
 
     def test_unknown_question_fails_before_api_instead_of_grading_a_subset(self):
-        result = self.invoke(self.arguments([self.questions[0], 'Кто победил в закупке?']) + ['--evaluate'], forbid_api=True)
-        self.assertEqual(result, 1)
+        with self.assertRaisesRegex(ValueError, 'эталонный вопрос'):
+            self.invoke([self.questions[0], 'Кто победил в закупке?'], forbid_api=True)
         self.assertFalse(self.output.exists())
 
     def test_changed_corpus_fails_before_api(self):
         (self.attachments / 'Новое условие.txt').write_text('Дополнительные условия изменяют договор.', encoding='utf-8')
-        result = self.invoke(self.arguments() + ['--evaluate'], forbid_api=True)
-        self.assertEqual(result, 1)
+        with self.assertRaisesRegex(ValueError, 'комплект документов'):
+            self.invoke(forbid_api=True)
         self.assertFalse(self.output.exists())
 
 

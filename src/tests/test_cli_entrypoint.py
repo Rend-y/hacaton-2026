@@ -34,7 +34,7 @@ class CliEntrypointTests(unittest.TestCase):
             text=True, encoding='utf-8', timeout=15, check=False)
 
     def test_help_process_succeeds_for_every_supported_command_without_api(self):
-        for command in (None, 'query', 'check-all', 'evaluate', 'compare', 'report'):
+        for command in (None, 'query'):
             with self.subTest(command=command):
                 arguments = ['--help'] if command is None else [command, '--help']
                 result = self.invoke(*arguments)
@@ -43,10 +43,12 @@ class CliEntrypointTests(unittest.TestCase):
                 if command is not None:
                     self.assertIn('python -m src ' + command, result.stdout)
                 self.assertNotIn('Traceback', result.stderr)
-        self.assertIn('--atacment', self.invoke('query', '--help').stdout)
+        help_text = self.invoke('query', '--help').stdout
+        for option in ('--attachment', '--prompt', '--mode'):
+            self.assertIn(option, help_text)
 
     def test_removed_commands_exit_before_model_configuration(self):
-        for command in ('run', 'ask'):
+        for command in ('run', 'ask', 'dashboard', 'check-all', 'evaluate', 'compare', 'report'):
             with self.subTest(command=command):
                 result = self.invoke(command)
                 self.assertEqual(result.returncode, 2)

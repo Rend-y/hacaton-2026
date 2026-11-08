@@ -75,20 +75,15 @@ class CliTests(unittest.TestCase):
 
     def test_parser_commands_and_defaults(self):
         _, arguments, _ = cli.app.parse_args(
-            ['query', '--atacment', 'contract.txt', '--promt', 'Срок?'],
+            ['query', '--attachment', 'contract.txt', '--prompt', 'Срок?'],
             exit_on_error=False, print_error=False)
         arguments.apply_defaults()
         self.assertEqual(arguments.arguments['mode'], 'verified')
-        self.assertFalse(arguments.arguments['evaluate'])
-        defaults = settings.QueryOptions(atacment=['contract.txt'], promt=['Срок?'])
+        defaults = settings.QueryOptions(attachment=['contract.txt'], prompt=['Срок?'])
         self.assertEqual((defaults.repair_attempts, defaults.max_tokens, defaults.timeout), (2, 32768, 900))
-        _, arguments, _ = cli.app.parse_args(
-            ['evaluate', '--run', 'runs/example'], exit_on_error=False, print_error=False)
-        self.assertEqual(Path(arguments.arguments['run']), Path('runs/example'))
-
     def test_parser_requires_query_arguments_and_valid_mode(self):
-        for argv in (['query'], ['query', '--atacment', 'contract.txt'],
-                     ['query', '--atacment', 'contract.txt', '--promt', 'Срок?', '--mode', 'unknown']):
+        for argv in (['query'], ['query', '--attachment', 'contract.txt'],
+                     ['query', '--attachment', 'contract.txt', '--prompt', 'Срок?', '--mode', 'unknown']):
             with self.subTest(argv=argv), redirect_stderr(io.StringIO()):
                 self.assertEqual(cli.main(argv), 2)
 

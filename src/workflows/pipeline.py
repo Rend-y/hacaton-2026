@@ -21,7 +21,8 @@ from src.files.run_storage import save_answers, write_json
 from src.settings import RunOptions
 
 
-def run_groups(options: RunOptions, questions, package_data, source_metadata=None, *, batch_limit: int) -> int:
+def run_groups(options: RunOptions, questions, package_data, source_metadata=None, *,
+               batch_limit: int, environ=None) -> int:
     """Сохраняет снимок, выполняет запрос с проверками и формирует локальный отчёт."""
     grouped = {}
     for question in questions:
@@ -40,9 +41,11 @@ def run_groups(options: RunOptions, questions, package_data, source_metadata=Non
         raise ValueError('mode must be baseline or verified')
     if not 0 <= options.repair_attempts <= 3:
         raise ValueError('repair-attempts must be 0–3')
-    client = Client(os.environ.get('API_KEY', ''), os.environ.get('BASE_URL', ''),
-                    os.environ.get('MODEL', ''), options.timeout, options.max_tokens,
-                    context_token_limit=options.context_token_limit, max_workers=options.max_workers)
+    environ = os.environ if environ is None else environ
+    client = Client(environ.get('API_KEY', ''), environ.get('BASE_URL', ''),
+                    environ.get('MODEL', ''), options.timeout, options.max_tokens,
+                    context_token_limit=options.context_token_limit, max_workers=options.max_workers,
+                    max_requests=options.max_requests)
     output.mkdir(parents=True, exist_ok=True)
     progress = RunLog(output / 'progress.log', emit, secrets=(client.key,))
     write_json(output / 'inputs.json', input_data)
@@ -62,7 +65,7 @@ def run_groups(options: RunOptions, questions, package_data, source_metadata=Non
                 'input_fingerprint': fingerprint, 'timeout_seconds': options.timeout,
                 'question_ids': [q['id'] for q in questions], 'created_at': datetime.now(timezone.utc).isoformat(),
                 'repair_attempts': options.repair_attempts if options.mode == 'verified' else 0,
-                'max_questions_per_request': batch_limit,
+                'max_questions_per_request': batch_limit, 'max_requests': options.max_requests,
                 'workers': options.max_workers, 'status': 'running', 'stats': dict(client.stats)}
     write_json(output / 'manifest.json', manifest)
     progress('Старт: режим %s; модель %s; вопросов %s; документов %s; максимум потоков %s.' %

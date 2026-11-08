@@ -121,7 +121,7 @@ def build_run_model(run_dir: Path) -> dict:
             raise ValueError('Разбивка по типам не совпадает с evaluation.csv')
         quality = {**metrics, 'by_type': by_type}
         if assessed.get('scope') == 'matched_query_questions':
-            warnings.append('Оценена выбранная группа. Вопросов в оценке: %s; во всём публичном наборе: %s. Индекс относится только к этой группе.' %
+            warnings.append('Оценена выбранная группа. Вопросов в оценке: %s; во всём эталонном наборе: %s. Индекс относится только к этой группе.' %
                             (metrics['n'], assessed.get('source_question_count', 'неизвестное число')))
         verdicts = {r['id']: r for r in rows}
         if set(verdicts) != set(selected_ids):
@@ -186,7 +186,7 @@ def build_run_model(run_dir: Path) -> dict:
     operations.update(elapsed_seconds=_number(manifest.get('elapsed_seconds')),
                       technical_errors=technical_errors, repair_requests=repair_requests)
     config_fields = ('model', 'mode', 'temperature', 'max_tokens', 'context_token_limit',
-                     'max_questions_per_request', 'timeout_seconds', 'workers', 'repair_attempts',
+                     'max_questions_per_request', 'max_requests', 'timeout_seconds', 'workers', 'repair_attempts',
                      'created_at', 'input_fingerprint')
     run = {'label': 'Текущий запуск', 'mode': manifest.get('mode', ''), 'model': manifest.get('model', ''),
            'status': manifest.get('status', ''), 'n_questions': len(selected_ids), 'quality': quality,

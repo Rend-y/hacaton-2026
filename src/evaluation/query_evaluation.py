@@ -76,7 +76,7 @@ def plan_query_evaluation(questions, documents, read_errors, data_dir):
         if candidate and not errors and _document_signature(candidate) == wanted:
             packages.append(package)
     if len(packages) != 1:
-        raise ValueError('Для --evaluate весь комплект документов должен однозначно совпадать с одной закупкой эталонного набора. Оценка произвольных документов без эталона недоступна.')
+        raise ValueError('Для оценки весь комплект документов должен однозначно совпадать с эталонным комплектом.')
     package = packages[0]
     candidates = [item for item in reference_questions if item['package'] == package]
     matches, used = [], set()
@@ -173,7 +173,7 @@ def evaluate_query_run(run_dir, data_dir):
         selected.append({**reference, 'id': match['id']})
 
     # Официальный скрипт оценивает весь переданный gold. Передаём ему ровно выбранные
-    # вопросы и полный неизменённый комплект документов, не весь набор из 71 вопроса.
+    # вопросы и полный неизменённый комплект документов.
     with tempfile.TemporaryDirectory(prefix='query-evaluation-', dir=run_dir) as temporary:
         subset = Path(temporary)
         evaluation._write_json(subset / 'answers_public.json', selected)
@@ -193,6 +193,6 @@ def evaluate_query_run(run_dir, data_dir):
                   source_package=plan['package'], question_mapping=plan['matches'],
                   document_fingerprint=plan['document_fingerprint'])
     evaluation._write_json(run_dir / 'evaluation.json', result)
-    print('Оценена выборка: %s из %s вопросов публичного набора (%s). Индекс относится только к этой выборке.' %
+    print('Оценена выборка: %s из %s вопросов эталонного набора (%s). Индекс относится только к этой выборке.' %
           (result['n'], plan['source_question_count'], plan['package']))
     return result

@@ -2,8 +2,8 @@
 from datetime import datetime, timezone
 import json
 import logging
-import os
 from pathlib import Path
+from shutil import copyfile
 import threading
 import time
 from uuid import uuid4
@@ -37,47 +37,55 @@ def _cli_status(directory, manifest):
 
 
 class Jobs:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, config):
         self.root = root
+        self.config = config
         self.metadata = root / '.dashboard'
         self.active = set()
         self.lock = threading.Lock()
 
-    def start(self, files, questions, mode, *, evaluate=False):
+    def start(self, files, questions, mode, *, label=None, evaluation_data=None, snapshot_package=None):
+        environ = self.config.snapshot()
         now = datetime.now(timezone.utc)
         run_id = now.strftime('%Y%m%d-%H%M%S') + '-' + uuid4().hex[:12] + '-web'
         work = self.metadata / run_id
         work.mkdir(parents=True)
+        snapshot = work / 'evaluation'
+        if snapshot_package:
+            package = snapshot / 'packages' / snapshot_package
+            package.mkdir(parents=True)
+            for filename in ('questions.csv', 'answers_public.json'):
+                copyfile(evaluation_data / filename, snapshot / filename)
+            evaluation_data = snapshot
         documents = []
         for index, (name, content) in enumerate(files):
             # Отдельные папки сохраняют оригинальные имена, включая дубликаты.
-            directory = work / str(index)
-            directory.mkdir()
+            directory = package if snapshot_package else work / str(index)
+            directory.mkdir(exist_ok=True)
             path = directory / name
             path.write_bytes(content)
             documents.append(str(path))
-        questions_file = work / 'questions.json'
-        write_json(questions_file, questions)
         job = {'status': 'running', 'mode': mode, 'created_at': now.isoformat(),
-               'total': len(questions), 'label': files[0][0], 'file_count': len(files)}
-        args = QueryOptions(atacment=documents, promt=[str(questions_file)], mode=mode, evaluate=evaluate)
+               'kind': 'test' if evaluation_data else 'manual',
+               'total': len(questions), 'label': label or files[0][0], 'file_count': len(files)}
+        args = QueryOptions(attachment=documents, prompt=questions, mode=mode)
         with self.lock:
             write_json(work / 'job.json', job)
             self.active.add(run_id)
             try:
-                threading.Thread(target=self._run, args=(run_id, job, args), daemon=True).start()
+                threading.Thread(target=self._run, args=(run_id, job, args, environ, evaluation_data), daemon=True).start()
             except RuntimeError:
                 self.active.remove(run_id)
                 write_json(work / 'job.json', {**job, 'status': 'failed', 'error': 'Не удалось запустить обработку.'})
         return run_id
 
-    def _run(self, run_id, job, args):
+    def _run(self, run_id, job, args, environ, evaluation_data):
         try:
-            code = run_query(args, output=self.root / run_id)
+            code = run_query(args, output=self.root / run_id, environ=environ, evaluation_data=evaluation_data)
             result = {'status': 'completed' if code == 0 else 'completed_with_errors'}
         except (ValueError, OSError, ApiError) as exc:
             message = str(exc)
-            key = os.environ.get('API_KEY')
+            key = environ['API_KEY']
             result = {'status': 'failed', 'error': message.replace(key, '[скрыто]') if key else message}
         except Exception:
             logging.exception('Ошибка обработки %s', run_id)
@@ -111,7 +119,7 @@ class Jobs:
             manifest = manifests.get(run_id, {})
             job = jobs.get(run_id)
             if job or run_id.endswith('-web'):
-                kind = 'manual'
+                kind = job.get('kind', 'manual') if job else 'manual'
             else:
                 kind = 'benchmark' if '-all-' in run_id else 'cli'
             question_ids = manifest.get('question_ids')

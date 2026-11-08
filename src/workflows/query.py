@@ -1,4 +1,4 @@
-"""Сценарий вопросов к файлу, нескольким файлам или произвольной директории.
+"""Сценарий вопросов к одному или нескольким файлам.
 
 Здесь нет собственной модели или оценщика: модуль подготавливает входы, организует
 ввод вопросов и передаёт готовые тексты конвейеру проверки и сохранения результатов.
@@ -6,13 +6,12 @@
 from datetime import datetime
 import json
 from pathlib import Path
-import re
 
 from src.workflows import pipeline
 from src import settings
 from src.progress import emit
 from src.settings import QueryOptions, RunOptions
-from src.files.input_loader import MAX_QUESTIONS, MAX_QUESTION_CHARS, load_documents, load_questions
+from src.files.input_loader import MAX_QUESTIONS, MAX_QUESTION_CHARS, load_documents
 from src.generation.answer_engine import question_batches
 from src.generation.client import estimate_request_tokens, load_env
 from src.generation.prompts import messages
@@ -51,21 +50,21 @@ def _output_path():
     return settings.ROOT / 'runs' / name
 
 
-def _run_batch(args: QueryOptions, loaded, values, output: Path | None = None):
-    rows = _questions(values)
-    if args.evaluate:
+def _run_batch(args: QueryOptions, loaded, rows, output: Path | None = None, *, environ=None, evaluation_data=None):
+    if evaluation_data is not None:
         from src.evaluation.query_evaluation import plan_query_evaluation
         # До API проверяются только формулировки вопросов и исходные документы.
         # Правильные ответы читаются отдельным этапом после завершения генерации.
-        plan = plan_query_evaluation(rows, loaded['documents'], loaded['read_errors'], settings.ROOT / 'data' / 'public')
+        plan = plan_query_evaluation(rows, loaded['documents'], loaded['read_errors'], evaluation_data)
         emit('Для оценки сопоставлено вопросов: %s; пакет: %s. Эталоны ответов ещё не загружались.' %
                  (len(plan['matches']), plan['package']))
     # Используем ту же консервативную оценку контекста, что и API-клиент. Большой
     # набор отклоняется до запроса, а не урезается скрытно до удобного размера.
-    load_env(settings.ROOT / '.env')
-    batch_limit = settings.question_batch_limit()
+    if environ is None:
+        load_env(settings.ROOT / '.env')
+    batch_limit = settings.question_batch_limit(environ)
     options = RunOptions.from_env(args.mode, output or _output_path(), repair_attempts=args.repair_attempts,
-                                  max_tokens=args.max_tokens, timeout=args.timeout)
+                                  max_tokens=args.max_tokens, timeout=args.timeout, environ=environ)
     for batch in question_batches(rows, batch_limit):
         payload = messages(args.mode, loaded['documents'], batch, loaded['read_errors'])
         estimate = estimate_request_tokens(payload, options.max_tokens)
@@ -76,12 +75,13 @@ def _run_batch(args: QueryOptions, loaded, values, output: Path | None = None):
     output = options.output
     package_data = {'INPUT': (loaded['documents'], loaded['read_errors'])}
     source_metadata = {'sources': loaded['sources'], 'skipped': loaded['skipped']}
-    code = pipeline.run_groups(options, rows, package_data, source_metadata=source_metadata, batch_limit=batch_limit)
-    if args.evaluate:
+    code = pipeline.run_groups(options, rows, package_data, source_metadata=source_metadata,
+                               batch_limit=batch_limit, environ=environ)
+    if evaluation_data is not None:
         from src.evaluation.query_evaluation import evaluate_query_run
         from src.reporting.report import write_run_report
-        emit('Генерация завершена. Оцениваем только заданные вопросы по публичным эталонам.')
-        evaluate_query_run(output, settings.ROOT / 'data' / 'public')
+        emit('Генерация завершена. Оцениваем только заданные вопросы по эталону.')
+        evaluate_query_run(output, evaluation_data)
         write_run_report(output)
     answers = json.loads((output / 'answers.json').read_text(encoding='utf-8'))
     questions = {row['id']: row['question'] for row in rows}
@@ -100,43 +100,14 @@ def _run_batch(args: QueryOptions, loaded, values, output: Path | None = None):
     return code
 
 
-def _question_inputs(values):
-    """Один параметр принимает текст вопросов или файлы; порядок ввода сохраняется."""
-    questions, files = [], []
-    for value in values:
-        if not value.strip():
-            raise ValueError('Вопрос не должен быть пустым.')
-        path = Path(value).expanduser()
-        # Опечатка в пути не должна становиться вопросом модели. Обычный текст
-        # вроде «Какая гарантия?» при этом не требует специального префикса.
-        looks_like_path = (path.is_absolute() or value.startswith(('./', '../', '.\\', '..\\', '~/', '~\\'))
-                           or bool(re.match(r'^[A-Za-z]:[\\/]', value))
-                           or path.suffix.lower() in {'.txt', '.md', '.rst', '.csv', '.json'})
-        try:
-            exists = path.exists()
-        except (OSError, ValueError):
-            exists = False
-        if exists:
-            if not path.is_file():
-                raise ValueError('--promt ожидает текст вопроса или файл, а не папку: ' + value)
-            questions.extend(load_questions(path))
-            files.append(path)
-        elif looks_like_path:
-            raise ValueError('Файл вопросов не найден: ' + value)
-        else:
-            questions.append(value)
-    # Проверяем вопросы до чтения контента и до создания API-клиента.
-    _questions(questions)
-    return questions, files
-
-
-def run_query(args: QueryOptions, *, output: Path | None = None) -> int:
+def run_query(args: QueryOptions, *, output: Path | None = None, environ=None, evaluation_data: Path | None = None) -> int:
     """Два входа: документы и вопросы. Режим выбирает способ проверки ответов."""
-    values, question_files = _question_inputs(args.promt)
-    # Файлы с вопросами не входят в доказательства ответа. Старые результаты
-    # распознаёт загрузчик по служебным файлам, без требования к именам папок.
-    loaded = load_documents(args.atacment, exclude_paths=question_files)
+    rows = _questions(args.prompt)
+    for value in args.attachment:
+        if not Path(value).expanduser().is_file():
+            raise ValueError('Укажите существующий файл документа: ' + value)
+    loaded = load_documents(args.attachment)
     _show_inputs(loaded)
     if not loaded['documents']:
         raise ValueError('Не найдено ни одного читаемого документа. Проверьте пути и сообщения выше.')
-    return _run_batch(args, loaded, values, output)
+    return _run_batch(args, loaded, rows, output, environ=environ, evaluation_data=evaluation_data)

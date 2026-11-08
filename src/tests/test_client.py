@@ -8,8 +8,10 @@ import io
 import json
 import os
 import tempfile
+import threading
 import unittest
 import urllib.error
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -178,6 +180,34 @@ class ClientTests(unittest.TestCase):
         client.complete(self.MESSAGES)
         self.sleep.assert_called_once_with(75.0)
         self.assertEqual(client.stats['http_retries'], 1)
+
+    def test_request_budget_counts_retries_and_stops_before_next_backoff(self):
+        client = self.make_client(self.http_error(503), self.http_error(503), max_requests=2)
+        with self.assertRaisesRegex(ApiError, 'MAX_REQUESTS=2'):
+            client.complete(self.MESSAGES)
+        self.assertEqual(client.stats['requests'], 2)
+        self.assertEqual(client.stats['http_retries'], 1)
+        self.sleep.assert_called_once_with(2)
+
+    def test_request_budget_is_shared_by_parallel_workers(self):
+        client = self.make_client(max_requests=1)
+        opener = FakeOpener(self.completion())
+        ready = threading.Barrier(2)
+        client.limiter.acquire.side_effect = lambda *_args, **_kwargs: ready.wait(timeout=5)
+
+        def complete():
+            client.opener = opener
+            try:
+                client.complete(self.MESSAGES)
+            except ApiError as exc:
+                self.assertIn('MAX_REQUESTS=1', str(exc))
+                return False
+            return True
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            self.assertEqual(sorted(executor.map(lambda _: complete(), range(2))), [False, True])
+        self.assertEqual(client.stats['requests'], 1)
+        self.assertEqual(len(opener.calls), 1)
 
     def test_repeated_429_stops_after_three_attempts(self):
         client = self.make_client(self.http_error(429), self.http_error(429), self.http_error(429))

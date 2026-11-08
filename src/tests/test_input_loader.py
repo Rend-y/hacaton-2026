@@ -1,5 +1,4 @@
 """Проверки произвольных входов: настоящие временные файлы, без модели и сети."""
-import json
 from pathlib import Path
 import sys
 import tempfile
@@ -180,25 +179,6 @@ class InputLoaderTests(unittest.TestCase):
         self.assertEqual(len(result['read_errors']), 1)
         self.assertIn('2', result['read_errors'][0])
         self.assertIn('OCR', result['read_errors'][0])
-
-    def test_questions_text_csv_and_json_preserve_question_contents(self):
-        text = self.write('list.txt', 'Первый вопрос?\n\nВторой вопрос?\n', encoding='cp1251')
-        self.assertEqual(loader.load_questions(text), ['Первый вопрос?', 'Второй вопрос?'])
-        csv = self.write('list.csv', 'id;package;question\nQ1;CUSTOM;"Сумма; в рублях?"\nQ2;OTHER;"Строка\nвнутри?"')
-        self.assertEqual(loader.load_questions(csv), ['Сумма; в рублях?', 'Строка\nвнутри?'])
-        russian = self.write('ru.csv', 'Вопрос,Пояснение\n"Сумма, рубли?",comment')
-        self.assertEqual(loader.load_questions(russian), ['Сумма, рубли?'])
-        data = self.write('list.json', json.dumps({'questions': ['Первый?', {'question': 'Второй?'}]}, ensure_ascii=False))
-        self.assertEqual(loader.load_questions(data), ['Первый?', 'Второй?'])
-
-    def test_invalid_question_files_do_not_silently_drop_rows(self):
-        for name, content in [('empty.txt', ''), ('bad.csv', 'question\n""\n'),
-                              ('bad.json', '{"questions":[1]}'), ('wrong.csv', 'answer\n42')]:
-            with self.subTest(name=name), self.assertRaises(ValueError):
-                loader.load_questions(self.write(name, content))
-        with patch.object(loader, 'MAX_QUESTIONS', 1), self.assertRaisesRegex(ValueError, 'Допустимо'):
-            loader.load_questions(self.write('many.txt', 'Первый?\nВторой?'))
-
 
 if __name__ == '__main__':
     unittest.main()

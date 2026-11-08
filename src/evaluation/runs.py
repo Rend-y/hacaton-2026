@@ -237,6 +237,8 @@ def comparison_data(baseline: Path, verified: Path) -> dict:
     for field in ('temperature', 'max_tokens'):
         if field in before_manifest and field in after_manifest and before_manifest[field] != after_manifest[field]:
             raise ValueError(f'Нельзя сравнить запуски: различается {field}')
+    if before_manifest.get('max_requests') != after_manifest.get('max_requests'):
+        raise ValueError('Нельзя сравнить запуски: различается max_requests')
 
     before_eval = _read_json(baseline / 'evaluation.json')
     after_eval = _read_json(verified / 'evaluation.json')

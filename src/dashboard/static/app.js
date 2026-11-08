@@ -1,7 +1,7 @@
 "use strict";
 
 const byId = (id) => document.getElementById(id);
-const isNew = location.pathname === "/new";
+const page = new Map([["/new", "new"], ["/settings", "settings"], ["/tests", "tests"]]).get(location.pathname) ?? "runs";
 const statuses = new Map([
   ["running", "В процессе"],
   ["completed", "Завершена"],
@@ -9,16 +9,28 @@ const statuses = new Map([
   ["failed", "Ошибка"],
   ["unknown", "Статус неизвестен"],
 ]);
-const runKinds = new Map([["manual", "Вручную"], ["cli", "CLI"], ["benchmark", "check-all"]]);
+const runKinds = new Map([["manual", "Вручную"], ["cli", "CLI"], ["benchmark", "check-all"], ["test", "Тестовый набор"]]);
 const dateFormat = new Intl.DateTimeFormat("ru", { dateStyle: "short", timeStyle: "short" });
 let previous = "";
 
-byId(isNew ? "new-page" : "runs-page").hidden = false;
-byId(isNew ? "new-link" : "runs-link").setAttribute("aria-current", "page");
-if (isNew) {
+byId(`${page}-page`).hidden = false;
+byId(`${page}-link`).setAttribute("aria-current", "page");
+if (page === "new") {
   document.title = "Новая обработка · Ответы по документам";
   byId("launch-form").addEventListener("submit", submitRun);
-} else {
+  const mode = byId("mode");
+  const descriptions = {
+    verified: byId("mode-hint").textContent,
+    baseline: "Сохраняет ответ модели как есть, без локальной сверки цитат, чисел и дат и без попыток исправления.",
+  };
+  const showMode = () => { byId("mode-hint").textContent = descriptions[mode.value]; };
+  mode.addEventListener("change", showMode);
+  showMode();
+} else if (page === "settings") {
+  document.title = "Настройки · Ответы по документам";
+  byId("settings-form").addEventListener("submit", saveSettings);
+  loadSettings();
+} else if (page === "runs") {
   refreshRuns();
 }
 
@@ -110,7 +122,8 @@ async function refreshRuns() {
 async function submitRun(event) {
   event.preventDefault();
   const form = event.currentTarget;
-  const button = form.querySelector("button");
+  const button = form.querySelector('button[type="submit"]');
+  const label = button.textContent;
   const error = byId("form-error");
   error.hidden = true;
   button.disabled = true;
@@ -130,7 +143,61 @@ async function submitRun(event) {
   } finally {
     if (!error.hidden) {
       button.disabled = false;
-      button.textContent = "Запустить обработку";
+      button.textContent = label;
     }
+  }
+}
+
+function showSettings(form, data) {
+  for (const input of form.querySelectorAll("input")) {
+    input.value = data.values[input.name] ?? "";
+    input.disabled = data.overridden.includes(input.name);
+  }
+  byId("api-key").placeholder = data.api_key_set ? "Ключ задан" : "Введите API-ключ";
+  byId("settings-overrides").hidden = data.overridden.length === 0;
+}
+
+async function loadSettings() {
+  const form = byId("settings-form");
+  try {
+    const response = await fetch(form.action);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error);
+    showSettings(form, data);
+    byId("settings-fields").disabled = false;
+    form.querySelector("button").disabled = false;
+  } catch (failure) {
+    const error = byId("settings-error");
+    error.textContent = failure.message || "Не удалось загрузить настройки.";
+    error.hidden = false;
+  }
+}
+
+async function saveSettings(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const body = JSON.stringify(Object.fromEntries(new FormData(form)));
+  const fields = byId("settings-fields");
+  const button = form.querySelector("button");
+  const error = byId("settings-error");
+  const success = byId("settings-success");
+  error.hidden = true;
+  success.hidden = true;
+  fields.disabled = true;
+  button.disabled = true;
+  try {
+    const response = await fetch(form.action, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body,
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error);
+    showSettings(form, data);
+    success.hidden = false;
+  } catch (failure) {
+    error.textContent = failure.message || "Не удалось сохранить настройки.";
+    error.hidden = false;
+  } finally {
+    fields.disabled = false;
+    button.disabled = false;
   }
 }

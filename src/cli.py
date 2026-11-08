@@ -1,16 +1,12 @@
-"""Типизированные команды Cyclopts: параметры, справка и вызовы прикладных модулей."""
-import json
-from pathlib import Path
+"""Команда запроса к документам и коды завершения CLI."""
 import sys
 from typing import Annotated, Literal
 
-from cyclopts import App, Group, Parameter
+from cyclopts import App, Parameter
 from cyclopts.exceptions import CycloptsError
-from cyclopts.validators import LimitedChoice
 
 from src.generation.client import ApiError
-from src import settings
-from src.progress import emit
+from src.settings import QueryOptions
 
 
 app = App(name='python -m src', help='Ответы по вашим документам: файлы, вопросы, проверки и HTML-отчёт.',
@@ -21,84 +17,16 @@ app = App(name='python -m src', help='Ответы по вашим докуме�
 @app.command
 def query(
     *,
-    atacment: Annotated[list[str], Parameter(consume_multiple=1, negative=False, json_list=False,
-        help='Файл, несколько файлов или папки с документами. Папки читаются рекурсивно.')],
-    promt: Annotated[list[str], Parameter(consume_multiple=1, negative=False, json_list=False,
-        help='Один или несколько вопросов в кавычках либо файлы вопросов TXT/MD/RST/CSV/JSON.')],
+    attachment: Annotated[list[str], Parameter(consume_multiple=1, negative=False, json_list=False,
+        help='Один или несколько файлов документов. Укажите путь к каждому файлу.')],
+    prompt: Annotated[list[str], Parameter(consume_multiple=1, negative=False, json_list=False,
+        help='Один или несколько вопросов. Передайте каждый вопрос отдельным аргументом.')],
     mode: Annotated[Literal['baseline', 'verified'], Parameter(
         help='baseline — прямой ответ; verified — локальные проверки и исправления.')] = 'verified',
-    evaluate: Annotated[bool, Parameter(negative=False,
-        help='После генерации оценить вопросы, строго сопоставленные с известными эталонами.')] = False,
 ) -> int:
-    """Задать вопросы к произвольным документам, без обязательной структуры папок."""
+    """Ответить на вопросы по общему комплекту переданных файлов."""
     from src.workflows.query import run_query
-    return run_query(settings.QueryOptions(atacment=atacment, promt=promt, mode=mode, evaluate=evaluate))
-
-
-@app.command
-def evaluate(
-    *,
-    run: Annotated[Path, Parameter(help='Папка сохранённого запуска с ответами.')],
-    data: Annotated[Path | None, Parameter(show_default=False,
-        help='Каталог эталонов только для оценки; по умолчанию data/public внутри проекта.')] = None,
-) -> int:
-    """Оценить сохранённые ответы и обновить HTML без обращения к модели."""
-    from src.evaluation.runs import evaluate_saved_run
-    from src.reporting.report import write_run_report
-    evaluate_saved_run(run.resolve(), (data or settings.ROOT / 'data' / 'public').resolve())
-    emit('HTML-отчёт: ' + str(write_run_report(run)))
-    return 0
-
-
-@app.command
-def compare(
-    *,
-    baseline: Annotated[Path, Parameter(help='Оценённый запуск в режиме baseline.')],
-    verified: Annotated[Path, Parameter(help='Оценённый запуск verified на тех же данных.')],
-    output: Annotated[Path, Parameter(help='Папка для comparison.json, comparison.csv и HTML.')],
-) -> int:
-    """Сравнить два совместимых оценённых запуска без повторной генерации."""
-    from src.evaluation.runs import compare_runs
-    from src.reporting.report import write_comparison_report
-    result = compare_runs(baseline.resolve(), verified.resolve(), output.resolve())
-    emit(json.dumps(result, ensure_ascii=False, indent=2))
-    emit('HTML-отчёт: ' + str(write_comparison_report(output)))
-    return 0
-
-
-# Ограничение источников проверяет библиотека ещё до чтения файлов отчёта.
-@app.command(name='check-all')
-def check_all(*, mode: Literal['baseline', 'verified'] = 'verified') -> int:
-    """Все вопросы поставляемого набора: одна выгрузка, общая оценка и HTML."""
-    from src.workflows.benchmark import run_public
-    return run_public(mode)
-
-
-@app.command
-def dashboard(*, port: int = 8765) -> int:
-    """Запустить локальный веб-интерфейс для просмотра и запуска обработок."""
-    from src.dashboard.server import serve
-    serve(port)
-    return 0
-
-
-# Пользователь выбирает единственный источник для пересборки HTML.
-report_source = Group('Источник отчёта: выберите один', validator=LimitedChoice(min=1, max=1))
-
-
-@app.command
-def report(
-    *,
-    run: Annotated[Path | None, Parameter(group=report_source,
-        help='Папка одного сохранённого запуска.')] = None,
-    comparison: Annotated[Path | None, Parameter(group=report_source,
-        help='Папка с comparison.json и доступными исходными запусками.')] = None,
-) -> int:
-    """Пересобрать HTML по сохранённым файлам, без генерации и оценивания."""
-    from src.reporting.report import write_run_report, write_comparison_report
-    path = write_run_report(run) if run is not None else write_comparison_report(comparison)
-    emit('HTML-отчёт: ' + str(path))
-    return 0
+    return run_query(QueryOptions(attachment=attachment, prompt=prompt, mode=mode))
 
 
 def main(argv=None):

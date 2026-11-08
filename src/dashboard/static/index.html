@@ -6,6 +6,7 @@
   <title>Обработки · Ответы по документам</title>
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
+  <script src="/test-data.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">К содержимому</a>
@@ -18,6 +19,8 @@
       <nav aria-label="Разделы">
         <a href="/" id="runs-link"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" /></svg>Обработки</a>
         <a href="/new" id="new-link"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>Новая обработка</a>
+        <a href="/tests" id="tests-link"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 3h6m-5 0v7l-5 9a1 1 0 0 0 1 2h12a1 1 0 0 0 1-2l-5-9V3M8 15h8" /></svg>Тестовые наборы</a>
+        <a href="/settings" id="settings-link"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16M8 5v4M16 10v4M10 15v4" /></svg>Настройки</a>
       </nav>
       <span class="workspace"><span></span>Локальная рабочая область</span>
     </aside>
@@ -70,22 +73,137 @@
           <div class="field">
             <label for="mode">Режим ответа</label>
             <select id="mode" name="mode" aria-describedby="mode-hint">
-              <option value="verified">С проверкой</option>
-              <option value="baseline">Прямой ответ</option>
+              <option value="verified">С проверкой — сверка цитат, чисел и дат</option>
+              <option value="baseline">Прямой ответ — без локальной проверки</option>
             </select>
-            <p id="mode-hint" class="hint">Режим с проверкой сверяет цитаты, числа и даты с документами.</p>
-          </div>
-          <div class="evaluation-option">
-            <label for="evaluate">
-              <input id="evaluate" name="evaluate" type="checkbox" value="on" aria-describedby="evaluate-hint">
-              Оценить ответы по эталону
-            </label>
-            <p id="evaluate-hint" class="hint">Добавляет итоговую оценку в отчёт. Загрузите все документы одного демонстрационного комплекта и задайте один или несколько вопросов к нему из набора.</p>
+            <p id="mode-hint" class="hint" aria-live="polite">Сверяет цитаты, числа и даты с документами. При ошибках запрашивает исправление.</p>
           </div>
           <p id="form-error" class="notice" role="alert" hidden></p>
           <div class="form-actions">
             <button class="button primary" type="submit">Запустить обработку</button>
             <a class="button secondary" href="/">К списку</a>
+          </div>
+        </form>
+      </section>
+      <section id="tests-page" hidden>
+        <header class="page-heading">
+          <div>
+            <h1>Тестовые наборы</h1>
+            <p>Сохраните документы и ожидаемые ответы, затем проверьте модель на своём наборе.</p>
+          </div>
+        </header>
+        <section class="panel test-library" aria-labelledby="test-library-title">
+          <div class="panel-heading"><h2 id="test-library-title">Сохранённые наборы</h2></div>
+          <p id="test-list-error" class="notice" role="alert" hidden></p>
+          <div class="test-preset">
+            <div><strong>Контрольный тест P01</strong><span class="run-meta">Встроенный набор · 5 файлов · 40 вопросов</span></div>
+            <button class="button secondary" type="button" id="p01-run">Запустить тест P01</button>
+          </div>
+          <p id="test-list-empty" class="empty" role="status">Загружаем наборы…</p>
+          <ul id="test-list" hidden></ul>
+        </section>
+        <form id="test-form" class="panel launch-form" action="/api/tests" method="post" enctype="multipart/form-data">
+          <h2 id="test-form-title">Новый набор</h2>
+          <div class="field">
+            <label for="test-name">Название теста</label>
+            <input id="test-name" name="name" type="text" maxlength="80" required aria-describedby="test-name-hint">
+            <p id="test-name-hint" class="hint">Под этим именем будет создана папка набора.</p>
+          </div>
+          <div class="field">
+            <label for="test-documents">Документы</label>
+            <input id="test-documents" name="documents" type="file" multiple required
+                   accept=".txt,.md,.rst,.csv,.json,.htm,.html,.docx,.pdf" aria-describedby="test-current-documents">
+            <p id="test-current-documents" class="hint" hidden></p>
+          </div>
+          <div class="field">
+            <h2>Вопросы и эталоны</h2>
+            <p class="hint" id="test-expected-hint">Укажите ожидаемое значение или несколько обязательных фрагментов, по одному на строку.</p>
+            <div id="test-cases"></div>
+            <button class="button secondary" id="add-test-case" type="button">Добавить вопрос</button>
+          </div>
+          <p id="test-form-error" class="notice" role="alert" hidden></p>
+          <p id="test-form-success" class="success" role="status" hidden>Тестовый набор сохранён.</p>
+          <div class="form-actions">
+            <button class="button primary" type="submit">Сохранить набор</button>
+            <button class="button secondary" id="cancel-test-edit" type="button" hidden>Отменить редактирование</button>
+          </div>
+        </form>
+        <template id="test-case-template">
+          <fieldset class="test-case">
+            <legend></legend>
+            <label class="field">Вопрос <input type="text" data-field="question" maxlength="10000" required></label>
+            <label class="field">Ожидаемый ответ
+              <textarea data-field="expected" rows="2" maxlength="10000" required aria-describedby="test-expected-hint"></textarea>
+            </label>
+            <label class="field">Цитата из документа (необязательно)
+              <textarea data-field="quote" rows="2" maxlength="10000"></textarea>
+            </label>
+            <button class="button secondary remove-test-case" type="button">Удалить вопрос</button>
+          </fieldset>
+        </template>
+      </section>
+      <section id="settings-page" hidden>
+        <header class="page-heading">
+          <div>
+            <h1>Настройки</h1>
+            <p>Подключение к модели и лимиты для новых обработок.</p>
+          </div>
+        </header>
+        <form id="settings-form" class="panel launch-form" action="/api/settings" method="post" autocomplete="off">
+          <fieldset id="settings-fields" disabled>
+            <div class="settings-group">
+              <h2>Подключение к модели</h2>
+              <div class="field">
+                <label for="base-url">Базовый URL API</label>
+                <input id="base-url" name="BASE_URL" type="url" placeholder="https://api.example.com/v1" aria-describedby="base-url-hint">
+                <p id="base-url-hint" class="hint">Базовый HTTPS-адрес без пути /chat/completions в конце.</p>
+              </div>
+              <div class="field">
+                <label for="model">Название модели</label>
+                <input id="model" name="MODEL" type="text" placeholder="Идентификатор модели у провайдера">
+              </div>
+              <div class="field">
+                <label for="api-key">API-ключ</label>
+                <input id="api-key" name="API_KEY" type="password" autocomplete="new-password" aria-describedby="api-key-hint">
+                <p id="api-key-hint" class="hint">Если поле пустое, используется ранее сохранённый ключ.</p>
+              </div>
+            </div>
+            <div class="settings-group">
+              <h2>Лимиты обработки</h2>
+              <div class="settings-grid">
+                <div class="field">
+                  <label for="max-requests">HTTP-запросов на обработку</label>
+                  <input id="max-requests" name="MAX_REQUESTS" type="number" min="1" step="1" placeholder="Без лимита" aria-describedby="requests-hint">
+                  <p id="requests-hint" class="hint">Включая повторные попытки.</p>
+                </div>
+                <div class="field">
+                  <label for="max-questions">Вопросов на запрос</label>
+                  <input id="max-questions" name="MAX_QUESTIONS_PER_REQUEST" type="number" min="1" step="1" required>
+                </div>
+                <div class="field">
+                  <label for="timeout">Таймаут HTTP, секунды</label>
+                  <input id="timeout" name="TIMEOUT_SECONDS" type="number" min="0" step="any" required>
+                </div>
+                <div class="field">
+                  <label for="max-workers">Параллельных обработчиков</label>
+                  <input id="max-workers" name="MAX_WORKERS" type="number" min="1" step="1" required>
+                </div>
+                <div class="field">
+                  <label for="max-tokens">Максимум токенов ответа</label>
+                  <input id="max-tokens" name="MAX_TOKENS" type="number" min="1" step="1" required>
+                </div>
+                <div class="field">
+                  <label for="context-limit">Лимит токенов контекста</label>
+                  <input id="context-limit" name="CONTEXT_TOKEN_LIMIT" type="number" min="2" step="1" required>
+                </div>
+              </div>
+            </div>
+          </fieldset>
+          <p id="settings-overrides" class="hint" hidden>Заблокированные поля заданы через переменные окружения процесса.</p>
+          <p id="settings-error" class="notice" role="alert" hidden></p>
+          <p id="settings-success" class="success" role="status" hidden>Сохранено. Новые обработки используют эти настройки.</p>
+          <div class="form-actions">
+            <button class="button primary" type="submit" disabled>Сохранить настройки</button>
           </div>
         </form>
       </section>

@@ -5,9 +5,6 @@
 """
 from __future__ import annotations
 
-import csv
-import io
-import json
 import os
 import re
 import stat
@@ -282,42 +279,3 @@ def load_documents(paths, exclude_paths=()):
         detail = '; '.join(item['reason'] for item in skipped[:3]) or 'папка пуста'
         raise ValueError('Не найдено читаемых документов. ' + detail)
     return {'documents': documents, 'read_errors': errors, 'sources': sources, 'skipped': skipped}
-
-
-def load_questions(path):
-    """Читает вопросы из строк TXT/MD, колонки CSV или массива JSON; ID создаёт CLI."""
-    path = Path(path).expanduser()
-    if not path.is_file() or _is_link(path):
-        raise ValueError('Файл вопросов отсутствует или является ссылкой: ' + _safe_label(path))
-    if path.stat().st_size > MAX_FILE_BYTES:
-        raise ValueError('Файл вопросов слишком большой')
-    text = _decode(path.read_bytes())
-    suffix = path.suffix.lower()
-    if suffix in ('.txt', '.md', '.rst'):
-        questions = [line.strip() for line in text.splitlines() if line.strip()]
-    elif suffix == '.csv':
-        header = text.splitlines()[0] if text else ''
-        delimiter = ';' if header.count(';') >= header.count(',') else ','
-        reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
-        columns = {name.strip().casefold(): name for name in (reader.fieldnames or [])}
-        column = columns.get('question') or columns.get('вопрос')
-        if not column:
-            raise ValueError('В CSV вопросов нужна колонка question или вопрос')
-        questions = [(row.get(column) or '').strip() for row in reader]
-        if any(not value for value in questions):
-            raise ValueError('В CSV есть строка без вопроса')
-    elif suffix == '.json':
-        try:
-            value = json.loads(text)
-        except ValueError as exc:
-            raise ValueError('Файл вопросов содержит некорректный JSON') from exc
-        questions = value.get('questions') if isinstance(value, dict) else value
-        if isinstance(questions, list):
-            questions = [item.get('question') if isinstance(item, dict) else item for item in questions]
-    else:
-        raise ValueError('Файл вопросов должен быть TXT, MD, RST, CSV или JSON')
-    if not isinstance(questions, list) or not questions or any(not isinstance(item, str) or not item.strip() for item in questions):
-        raise ValueError('Не найдены непустые текстовые вопросы')
-    if len(questions) > MAX_QUESTIONS or any(len(item) > MAX_QUESTION_CHARS for item in questions):
-        raise ValueError('Допустимо до %s вопросов, каждый до %s символов' % (MAX_QUESTIONS, MAX_QUESTION_CHARS))
-    return [item.strip() for item in questions]

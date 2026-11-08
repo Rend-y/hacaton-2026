@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from src.progress import heartbeat
-from src.settings import DEFAULT_CONTEXT_TOKEN_LIMIT, DEFAULT_MAX_TOKENS, DEFAULT_TIMEOUT_SECONDS
+from src.settings import DEFAULT_CONTEXT_TOKEN_LIMIT, DEFAULT_MAX_TOKENS, DEFAULT_TIMEOUT_SECONDS, read_env
 
 
 def estimate_request_tokens(messages, max_tokens):
@@ -24,18 +24,20 @@ def estimate_request_tokens(messages, max_tokens):
 
 def load_env(path):
     """Загружает настройки генерации из .env с приоритетом окружения процесса."""
-    path = Path(path)
-    if not path.exists():
-        return
-    for line in path.read_text(encoding='utf-8-sig').splitlines():
-        line = line.strip()
-        if not line or line.startswith('#'):
-            continue
-        key, sep, value = line.partition('=')
-        key = key.strip()
-        if sep and key in ('BASE_URL', 'MODEL', 'API_KEY', 'TIMEOUT_SECONDS', 'MAX_TOKENS',
-                           'CONTEXT_TOKEN_LIMIT', 'MAX_QUESTIONS_PER_REQUEST', 'MAX_WORKERS'):
-            os.environ.setdefault(key, value.strip().strip('\"\''))
+    for key, value in read_env(Path(path)).items():
+        os.environ.setdefault(key, value)
+
+
+def validate_base_url(base_url):
+    try:
+        parsed = urlparse(base_url)
+        valid = (parsed.scheme == 'https' and parsed.hostname and parsed.username is None and parsed.password is None
+                 and '?' not in base_url and '#' not in base_url and not any(char.isspace() for char in base_url)
+                 and parsed.port != 0)
+    except ValueError:
+        valid = False
+    if not valid:
+        raise ValueError('BASE_URL must be an HTTPS URL without credentials or query parameters')
 
 
 class ApiError(RuntimeError):
@@ -83,14 +85,12 @@ class RateLimiter:
 class Client:
     """Выполняет запросы к /chat/completions и повторяет только временные сбои."""
     def __init__(self, key, base_url, model, timeout=DEFAULT_TIMEOUT_SECONDS, max_tokens=DEFAULT_MAX_TOKENS,
-                 *, context_token_limit=DEFAULT_CONTEXT_TOKEN_LIMIT, max_workers=2):
+                 *, context_token_limit=DEFAULT_CONTEXT_TOKEN_LIMIT, max_workers=2, max_requests=None):
         if not key:
             raise ValueError('Set API_KEY in .env or the environment')
         if not base_url:
             raise ValueError('Set BASE_URL in .env or the environment')
-        parsed = urlparse(base_url)
-        if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
-            raise ValueError('BASE_URL must be an HTTPS URL without credentials or query parameters')
+        validate_base_url(base_url)
         if not model:
             raise ValueError('Set MODEL in .env or the environment')
         self.key = key
@@ -99,6 +99,7 @@ class Client:
         self.timeout = timeout
         self.max_tokens = max_tokens
         self.context_token_limit = context_token_limit
+        self.max_requests = max_requests
         self.limiter = RateLimiter()
         self.semaphore = threading.BoundedSemaphore(max_workers)
         self.lock = threading.Lock()
@@ -122,6 +123,11 @@ class Client:
         with self.lock:
             return self._stats.copy()
 
+    def _check_request_budget(self):
+        # Вызывается под self.lock, в том числе перед увеличением счётчика.
+        if self.max_requests is not None and self._stats['requests'] >= self.max_requests:
+            raise ApiError(f'Достигнут лимит HTTP-запросов на обработку (MAX_REQUESTS={self.max_requests}).')
+
     def complete(self, messages, progress=None):
         """Возвращает текст ответа и расход токенов; рассуждения провайдера исключены."""
         def report(event, **fields):
@@ -136,9 +142,12 @@ class Client:
         body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
         for attempt in range(3):
             retry_after = 0
+            with self.lock:
+                self._check_request_budget()
             self.limiter.acquire(estimate, progress=progress)
             with self.semaphore:
                 with self.lock:
+                    self._check_request_budget()
                     self._stats['requests'] += 1
                 request = urllib.request.Request(self.base_url + '/chat/completions', data=body,
                     headers={'Authorization': 'Bearer ' + self.key, 'Content-Type': 'application/json'})
@@ -184,6 +193,7 @@ class Client:
                 except (KeyError, IndexError, TypeError, ValueError, AttributeError):
                     raise ApiError('Model API returned an invalid completion envelope') from None
             with self.lock:
+                self._check_request_budget()
                 self._stats['http_retries'] += 1
             delay = max(retry_after, 2 ** (attempt + 1))
             report('api_retry', wait_seconds=delay, next_http_attempt=attempt + 2)

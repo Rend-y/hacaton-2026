@@ -250,9 +250,10 @@ def _configuration(run):
               'context_token_limit': 'Лимит контекста',
               'repair_attempts': 'Разрешено исправлений', 'timeout_seconds': 'Таймаут HTTP, с',
               'max_questions_per_request': 'Максимум вопросов в запросе',
+              'max_requests': 'Лимит HTTP-запросов',
               'created_at': 'Время начала запуска', 'input_fingerprint': 'Отпечаток входных данных'}
     values = [('Модель', run.get('model')), ('Режим', run.get('mode'))]
-    values.extend((label, config[key]) for key, label in labels.items() if key in config)
+    values.extend((label, config[key]) for key, label in labels.items() if config.get(key) is not None)
     rows = ''.join('<div><dt>%s</dt><dd>%s</dd></div>' % (_e(label), _e(value)) for label, value in values)
     return '<details class="configuration"><summary>Настройки и воспроизводимость · %s</summary><dl>%s</dl></details>' % (_e(run.get('label') or 'Запуск'), rows)
 

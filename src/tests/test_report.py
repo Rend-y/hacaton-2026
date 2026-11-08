@@ -17,7 +17,6 @@ from unittest.mock import patch
 
 from src.evaluation import runs as evaluation
 from src.reporting import report
-from src import cli
 from src.workflows import pipeline
 from src.workflows import query
 from src.evaluation import query_evaluation
@@ -319,31 +318,8 @@ class ReportTests(unittest.TestCase):
         model = report.build_comparison_model(comparison)
         self.assertEqual(len(model['runs']), 2)
 
-    def test_report_command_requires_one_source(self):
-        for arguments in (['report'], ['report', '--run', 'run', '--comparison', 'comparison']):
-            with self.subTest(arguments=arguments), contextlib.redirect_stderr(io.StringIO()):
-                self.assertNotEqual(cli.main(arguments), 0)
-
-    def test_report_command_uses_existing_run_without_model_or_evaluator(self):
-        # Пересборка отчёта должна работать без ключа и без повторной оценки.
-        with patch.object(pipeline, 'Client', side_effect=AssertionError('API must remain offline')), \
-             patch.object(evaluation, 'evaluate_run', side_effect=AssertionError('Evaluation must not run')), \
-             patch.object(cli, 'emit'), contextlib.redirect_stdout(io.StringIO()):
-            result = cli.main(['report', '--run', str(self.run)])
-        self.assertEqual(result, 0)
-        self.assertTrue((self.run / 'report.html').is_file())
-
-    def test_report_command_rebuilds_existing_comparison_offline(self):
-        _, comparison = self.create_comparison()
-        with patch.object(pipeline, 'Client', side_effect=AssertionError('API must remain offline')), \
-             patch.object(evaluation, 'evaluate_run', side_effect=AssertionError('Evaluation must not run')), \
-             patch.object(cli, 'emit'), contextlib.redirect_stdout(io.StringIO()):
-            result = cli.main(['report', '--comparison', str(comparison)])
-        self.assertEqual(result, 0)
-        self.assertTrue((comparison / 'report.html').is_file())
-
     def test_query_evaluate_creates_html_after_separate_official_evaluation(self):
-        """Проходит весь CLI с имитацией API и настоящим отдельным оценщиком."""
+        """Проходит сценарий тестового набора с имитацией API и настоящим отдельным оценщиком."""
         data = self.root / 'data' / 'public'
         package = data / 'packages' / 'P01'
         package.mkdir(parents=True)
@@ -400,12 +376,13 @@ class ReportTests(unittest.TestCase):
             return original_evaluate(run_dir, data_dir)
 
         with patch.object(pipeline, 'Client', return_value=OfflineClient()), \
-             patch.object(query, 'load_env'), patch.object(cli, 'emit'), \
+             patch.object(query, 'load_env'), \
              patch.object(query_evaluation, 'evaluate_query_run', side_effect=evaluate_after_generation), \
              patch.object(settings, 'ROOT', self.root), patch.object(query, '_output_path', return_value=output), \
              contextlib.redirect_stdout(io.StringIO()):
-            result = cli.main(['query', '--atacment', str(documents),
-                               '--promt', 'Какой гарантийный срок?', '--mode', 'verified', '--evaluate'])
+            options = settings.QueryOptions(attachment=[str(documents / 'Договор.txt')],
+                                            prompt=['Какой гарантийный срок?'])
+            result = query.run_query(options, evaluation_data=data)
 
         self.assertEqual(result, 0)
         self.assertEqual(phases, ['generation', 'evaluation'])
