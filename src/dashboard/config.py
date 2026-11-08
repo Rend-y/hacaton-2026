@@ -26,25 +26,42 @@ class DashboardConfig:
 
     def input_retention_hours(self):
         with self.lock:
-            values = read_env(self.path, keys=(INPUT_RETENTION_KEY,))
-            raw = os.environ.get(INPUT_RETENTION_KEY, values.get(INPUT_RETENTION_KEY, DEFAULT_INPUT_RETENTION_HOURS))
+            raw = self._retention_raw()
+        return self._retention_hours(raw)
+
+    def _retention_raw(self):
+        values = read_env(self.path, keys=(INPUT_RETENTION_KEY,))
+        return os.environ.get(INPUT_RETENTION_KEY, values.get(INPUT_RETENTION_KEY, DEFAULT_INPUT_RETENTION_HOURS))
+
+    @staticmethod
+    def _retention_hours(raw):
         try:
             hours = int(raw)
-        except ValueError:
+        except (TypeError, ValueError):
             hours = -1
         if hours < 0:
             raise ValueError(f'{INPUT_RETENTION_KEY} должен быть целым числом от 0.')
         return hours
 
+    def _locked(self):
+        locked = set(self._overrides())
+        if INPUT_RETENTION_KEY in os.environ:
+            locked.add(INPUT_RETENTION_KEY)
+        return locked
+
     def public(self):
         with self.lock:
             overrides = self._overrides()
             values = {**GENERATION_DEFAULTS, **read_env(self.path), **overrides}
+            values[INPUT_RETENTION_KEY] = str(self._retention_raw())
+            locked = self._locked()
         key_set = bool(values.pop('API_KEY'))
-        return {'values': values, 'api_key_set': key_set, 'overridden': list(overrides)}
+        shown = (*GENERATION_DEFAULTS, INPUT_RETENTION_KEY)
+        return {'values': values, 'api_key_set': key_set, 'overridden': [key for key in shown if key in locked]}
 
     def save(self, changes):
-        if not isinstance(changes, dict) or not changes.keys() <= GENERATION_DEFAULTS.keys():
+        allowed = set(GENERATION_DEFAULTS) | {INPUT_RETENTION_KEY}
+        if not isinstance(changes, dict) or not changes.keys() <= allowed:
             raise ValueError('Форма содержит неизвестные настройки.')
         updates = {}
         for name, value in changes.items():
@@ -56,12 +73,15 @@ class DashboardConfig:
                 continue
             if name == 'API_KEY' and (not value.isascii() or any(char.isspace() for char in value)):
                 raise ValueError('API_KEY должен состоять из ASCII-символов без пробелов.')
+            if name == INPUT_RETENTION_KEY:
+                value = str(self._retention_hours(value))
             updates[name] = value
         with self.lock:
             overrides = self._overrides()
-            if updates.keys() & overrides.keys():
+            if updates.keys() & self._locked():
                 raise ValueError('Параметры из окружения процесса нужно менять в окружении.')
-            effective = {**GENERATION_DEFAULTS, **read_env(self.path), **updates, **overrides}
+            generation = {key: value for key, value in updates.items() if key in GENERATION_DEFAULTS}
+            effective = {**GENERATION_DEFAULTS, **read_env(self.path), **generation, **overrides}
             if effective['BASE_URL']:
                 try:
                     validate_base_url(effective['BASE_URL'])
