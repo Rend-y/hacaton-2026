@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Обработки · Ответы по документам</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">К содержимому</a>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="/">
+        <span class="brand-icon"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 3h7l4 4v13a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z M14 3v5h5 M10 12h6 M10 16h6 M4 7v10" /></svg></span>
+        <span>Ответы<br>по документам</span>
+      </a>
+      <nav aria-label="Разделы">
+        <a href="/" id="runs-link"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" /></svg>Обработки</a>
+        <a href="/new" id="new-link"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>Новая обработка</a>
+      </nav>
+      <span class="workspace"><span></span>Локальная рабочая область</span>
+    </aside>
+
+    <main id="main" tabindex="-1">
+      <noscript><p class="notice">Для работы дашборда включите JavaScript в браузере.</p></noscript>
+      <section id="runs-page" hidden>
+        <header class="page-heading">
+          <div>
+            <h1>Обработки</h1>
+            <p>Следите за ходом запусков и открывайте готовые отчёты.</p>
+          </div>
+          <a class="button primary" href="/new"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>Новая обработка</a>
+        </header>
+
+        <section class="panel history" aria-labelledby="history-title">
+          <div class="panel-heading">
+            <div class="history-heading"><h2 id="history-title">История запусков</h2><span id="run-count" class="count" hidden></span></div>
+            <span class="refresh" id="refresh-note" hidden><span></span>Обновляется автоматически</span>
+          </div>
+          <p id="list-error" class="notice" role="alert" hidden></p>
+          <p id="list-empty" class="empty" role="status">Загружаем обработки…</p>
+          <table id="run-table" hidden>
+            <thead><tr><th scope="col">Обработка</th><th scope="col">Тип запуска</th><th scope="col">Статус</th><th scope="col">Вопросы</th><th scope="col">Время запуска</th><th scope="col">Результат</th></tr></thead>
+            <tbody id="run-rows"></tbody>
+          </table>
+        </section>
+      </section>
+
+      <section id="new-page" hidden>
+        <header class="page-heading">
+          <div>
+            <h1>Новая обработка</h1>
+            <p>Добавьте документы и задайте вопросы по ним.</p>
+          </div>
+        </header>
+        <form id="launch-form" class="panel launch-form" method="post" action="/api/runs" enctype="multipart/form-data">
+          <div class="field">
+            <label for="documents">Документы</label>
+            <input id="documents" name="documents" type="file" multiple required aria-describedby="document-hint"
+                   accept=".txt,.md,.rst,.csv,.json,.htm,.html,.docx,.pdf">
+            <p id="document-hint" class="hint">TXT, Markdown, RST, CSV, JSON, HTML, DOCX или PDF. До 20 МиБ на файл и 80 МиБ суммарно.</p>
+          </div>
+          <div class="field">
+            <label for="questions">Вопросы</label>
+            <textarea id="questions" name="questions" rows="5" required aria-describedby="question-hint"
+                      placeholder="Какой срок выполнения работ?&#10;Какой гарантийный срок?"></textarea>
+            <p id="question-hint" class="hint">Один вопрос на строку. Каждый вопрос относится ко всем выбранным документам.</p>
+          </div>
+          <div class="field">
+            <label for="mode">Режим ответа</label>
+            <select id="mode" name="mode" aria-describedby="mode-hint">
+              <option value="verified">С проверкой</option>
+              <option value="baseline">Прямой ответ</option>
+            </select>
+            <p id="mode-hint" class="hint">Режим с проверкой сверяет цитаты, числа и даты с документами.</p>
+          </div>
+          <div class="evaluation-option">
+            <label for="evaluate">
+              <input id="evaluate" name="evaluate" type="checkbox" value="on" aria-describedby="evaluate-hint">
+              Оценить ответы по эталону
+            </label>
+            <p id="evaluate-hint" class="hint">Добавляет итоговую оценку в отчёт. Загрузите все документы одного демонстрационного комплекта и задайте один или несколько вопросов к нему из набора.</p>
+          </div>
+          <p id="form-error" class="notice" role="alert" hidden></p>
+          <div class="form-actions">
+            <button class="button primary" type="submit">Запустить обработку</button>
+            <a class="button secondary" href="/">К списку</a>
+          </div>
+        </form>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

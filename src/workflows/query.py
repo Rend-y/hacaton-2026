@@ -51,7 +51,7 @@ def _output_path():
     return settings.ROOT / 'runs' / name
 
 
-def _run_batch(args: QueryOptions, loaded, values):
+def _run_batch(args: QueryOptions, loaded, values, output: Path | None = None):
     rows = _questions(values)
     if args.evaluate:
         from src.evaluation.query_evaluation import plan_query_evaluation
@@ -64,7 +64,7 @@ def _run_batch(args: QueryOptions, loaded, values):
     # набор отклоняется до запроса, а не урезается скрытно до удобного размера.
     load_env(settings.ROOT / '.env')
     batch_limit = settings.question_batch_limit()
-    options = RunOptions.from_env(args.mode, _output_path(), repair_attempts=args.repair_attempts,
+    options = RunOptions.from_env(args.mode, output or _output_path(), repair_attempts=args.repair_attempts,
                                   max_tokens=args.max_tokens, timeout=args.timeout)
     for batch in question_batches(rows, batch_limit):
         payload = messages(args.mode, loaded['documents'], batch, loaded['read_errors'])
@@ -130,7 +130,7 @@ def _question_inputs(values):
     return questions, files
 
 
-def run_query(args: QueryOptions) -> int:
+def run_query(args: QueryOptions, *, output: Path | None = None) -> int:
     """Два входа: документы и вопросы. Режим выбирает способ проверки ответов."""
     values, question_files = _question_inputs(args.promt)
     # Файлы с вопросами не входят в доказательства ответа. Старые результаты
@@ -139,4 +139,4 @@ def run_query(args: QueryOptions) -> int:
     _show_inputs(loaded)
     if not loaded['documents']:
         raise ValueError('Не найдено ни одного читаемого документа. Проверьте пути и сообщения выше.')
-    return _run_batch(args, loaded, values)
+    return _run_batch(args, loaded, values, output)

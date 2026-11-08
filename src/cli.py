@@ -74,6 +74,14 @@ def check_all(*, mode: Literal['baseline', 'verified'] = 'verified') -> int:
     return run_public(mode)
 
 
+@app.command
+def dashboard(*, port: int = 8765) -> int:
+    """Запустить локальный веб-интерфейс для просмотра и запуска обработок."""
+    from src.dashboard.server import serve
+    serve(port)
+    return 0
+
+
 # Пользователь выбирает единственный источник для пересборки HTML.
 report_source = Group('Источник отчёта: выберите один', validator=LimitedChoice(min=1, max=1))
 
