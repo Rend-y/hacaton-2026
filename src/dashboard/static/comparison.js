@@ -11,7 +11,8 @@ if (page === "compare") {
   const changedOnly = byId("comparison-changed");
   const number = new Intl.NumberFormat("ru", { maximumFractionDigits: 2 });
   const signed = new Intl.NumberFormat("ru", { maximumFractionDigits: 2, signDisplay: "exceptZero" });
-  const metricHeaders = ["Показатель", "Baseline", "Verified", "Разница"];
+  const modeLabels = { baseline: "Чистый запрос", verified: "Улучшенный запрос" };
+  const metricHeaders = ["Показатель", ...Object.values(modeLabels), "Разница"];
   let questions = [];
   let scored = false;
 
@@ -44,7 +45,7 @@ if (page === "compare") {
   }
 
   function displayedIndex(value) {
-    return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null;
+    return Number.isFinite(value) ? value : null;
   }
 
   function svgElement(tag, attributes) {
@@ -65,19 +66,39 @@ if (page === "compare") {
     return row;
   }
 
+  function renderTrustCard(mode, report) {
+    const card = byId(`comparison-trust-${mode}`);
+    const index = displayedIndex(report?.index);
+    const bar = card.querySelector(".comparison-trust-bar");
+    const counts = card.querySelector(".comparison-trust-counts");
+    card.querySelector(".comparison-trust-score").textContent = index == null ? "—" : number.format(index);
+    card.querySelector(".comparison-trust-scale").hidden = index == null;
+    bar.hidden = index == null || !report.n;
+    bar.replaceChildren();
+    if (index == null) {
+      counts.textContent = "Нет оценки по эталону";
+      return;
+    }
+    const results = [["correct", "Верно"], ["careful", "Осторожно"], ["lies", "Ошибки"]];
+    counts.replaceChildren();
+    for (const [key, label] of results) {
+      if (counts.hasChildNodes()) counts.append(" · ");
+      counts.append(`${label} `, node("strong", number.format(report[key]), `comparison-count-${key}`));
+      if (report[key] > 0) {
+        const segment = node("span", "", `comparison-trust-${key}`);
+        segment.style.flexGrow = report[key];
+        bar.append(segment);
+      }
+    }
+  }
+
   function renderReportQuality(data) {
     const before = data.baseline.quality;
     const after = data.verified.quality;
-    for (const [mode, report] of [["baseline", before], ["verified", after]]) {
-      const index = displayedIndex(report?.index);
-      byId(`comparison-trust-${mode}`).textContent = index == null ? "—" : number.format(index);
-    }
+    renderTrustCard("baseline", before);
+    renderTrustCard("verified", after);
     const note = [data.quality_note];
-    if (!before || !after) note.push(`Нет сохранённой оценки: ${!before && !after ? "Baseline и Verified" : !before ? "Baseline" : "Verified"}.`);
-    if ([before, after].some((report) => report?.index < 0 || Object.values(report?.by_type ?? {}).some((group) => group?.index < 0))) {
-      note.push("Отрицательные индексы из отчётов показаны как 0 на этой шкале. Исходные значения доступны в отчётах.");
-    }
-    for (const [mode, label] of [["baseline", "Baseline"], ["verified", "Verified"]]) {
+    for (const [mode, label] of Object.entries(modeLabels)) {
       const conflicts = data[mode].source_audit_conflicts;
       if (conflicts) note.push(`${label}: верных по старой оценке с неподтверждёнными источниками — ${number.format(conflicts)}.`);
     }
@@ -93,7 +114,7 @@ if (page === "compare") {
     ))));
   }
 
-  function renderOverlap(data) {
+  function renderOverlap(data, verdictChanges) {
     const { paired } = data.coverage;
     const chart = byId("comparison-overlap-chart");
     const note = byId("comparison-overlap-note");
@@ -113,13 +134,10 @@ if (page === "compare") {
       chartBar("Текст и статус", both, paired, "both"),
     );
     const share = (total) => `${number.format(100 * paired / total)} %`;
-    const coverage = `Сопоставлено ${share(data.baseline.n_questions)} вопросов Baseline и ${share(data.verified.n_questions)} вопросов Verified.`;
-    const ranks = new Map([["обман", -1], ["осторожно", 0], ["верно", 1]]);
-    const changes = data.quality ? data.questions.filter((row) => ranks.has(row.baseline.verdict) && ranks.has(row.verified.verdict))
-      .map((row) => ranks.get(row.verified.verdict) - ranks.get(row.baseline.verdict)) : [];
-    const better = changes.filter((change) => change > 0).length;
-    const worse = changes.filter((change) => change < 0).length;
-    note.textContent = changes.length ? `${coverage} По эталону: улучшилось ${better}, ухудшилось ${worse}, совпало ${changes.length - better - worse}.` : coverage;
+    const coverage = `Сопоставлено ${share(data.baseline.n_questions)} вопросов чистого запроса и ${share(data.verified.n_questions)} вопросов улучшенного запроса.`;
+    const better = verdictChanges.filter((change) => change > 0).length;
+    const worse = verdictChanges.filter((change) => change < 0).length;
+    note.textContent = verdictChanges.length ? `${coverage} По эталону: улучшилось ${better}, ухудшилось ${worse}, совпало ${verdictChanges.length - better - worse}.` : coverage;
   }
 
   function renderAnswerSummary(transitions, paired) {
@@ -144,8 +162,8 @@ if (page === "compare") {
     summary.replaceChildren(table(metricHeaders, rows));
     chart.replaceChildren(...Array.from(counts).filter(([, values]) => values.some(Boolean)).map(([status, [baseline, verified]]) => {
       const group = node("div", "", "comparison-status-group");
-      group.append(node("strong", `«${status}»`), chartBar("Baseline", baseline, paired, "baseline"),
-        chartBar("Verified", verified, paired, "verified"));
+      group.append(node("strong", `«${status}»`), chartBar(modeLabels.baseline, baseline, paired, "baseline"),
+        chartBar(modeLabels.verified, verified, paired, "verified"));
       return group;
     }));
   }
@@ -157,7 +175,7 @@ if (page === "compare") {
       const summary = node("summary", item.question);
       summary.append(node("span", item.changed ? "Есть различия" : "Совпадает", "run-meta"));
       const answers = node("div", "", "comparison-grid");
-      for (const [mode, label] of [["baseline", "Baseline"], ["verified", "Verified"]]) {
+      for (const [mode, label] of Object.entries(modeLabels)) {
         const answer = item[mode];
         const card = node("div", "", "comparison-answer");
         card.append(node("strong", label), node("span", answer.status, "run-meta"),
@@ -174,30 +192,32 @@ if (page === "compare") {
 
   function render(data, params) {
     const coverage = data.coverage;
-    const changed = data.questions.filter((item) => item.changed).length;
-    const sameStatus = data.transitions.reduce((sum, cell) => sum + (cell.baseline === cell.verified ? cell.count : 0), 0);
-    const cards = [["Общие вопросы", coverage.paired], ["Различаются текст или статус", changed],
-      ["Совпадает статус", coverage.paired ? `${number.format(100 * sameStatus / coverage.paired)} %` : "—"],
-      ["Только в Baseline / Verified", `${coverage.baseline_only} / ${coverage.verified_only}`]];
-    byId("comparison-coverage").replaceChildren(...cards.map(([label, value]) => {
-      const item = node("div", "");
-      item.append(node("dt", label), node("dd", value));
-      return item;
-    }));
-    const scope = [data.documents_match === true ? "Содержимое документов совпадает."
-      : data.documents_match === false ? "Документы различаются. Изменения ответов могут зависеть от входных данных."
-        : "Совпадение комплектов документов не подтверждено."];
+    const ranks = new Map([["обман", -1], ["осторожно", 0], ["верно", 1]]);
+    const verdictChanges = data.quality ? data.questions
+      .filter((row) => ranks.has(row.baseline.verdict) && ranks.has(row.verified.verdict))
+      .map((row) => ranks.get(row.verified.verdict) - ranks.get(row.baseline.verdict)) : [];
+    byId("comparison-verdict-changes").textContent = verdictChanges.length
+      ? number.format(verdictChanges.filter((change) => change !== 0).length) : "—";
+    byId("comparison-document-warning").hidden = data.documents_match !== false;
+    const scope = [];
+    if (coverage.baseline_only || coverage.verified_only) {
+      scope.push(`Вопросов без пары: в чистом запросе — ${number.format(coverage.baseline_only)}, в улучшенном — ${number.format(coverage.verified_only)}.`);
+    }
     if (coverage.ambiguous) scope.push(`Повторяющиеся формулировки исключены (${coverage.ambiguous}).`);
     if (data.settings_changed.length) scope.push(`Различаются настройки генерации: ${data.settings_changed.join(", ")}.`);
-    byId("comparison-scope").textContent = scope.join(" ");
-    byId("comparison-links").replaceChildren(...[["baseline", "Baseline"], ["verified", "Verified"]].map(([mode, label]) => {
-      const link = node("a", `Отчёт ${label}`, "report-link");
+    const scopeNote = byId("comparison-scope");
+    scopeNote.textContent = scope.join(" ");
+    scopeNote.hidden = !scope.length;
+    byId("comparison-links").replaceChildren(...Object.entries(modeLabels).map(([mode, label]) => {
+      const link = node("a", `Отчёт «${label}»`, "button secondary");
       link.href = `/runs/${encodeURIComponent(params.get(mode))}/report.html`;
+      link.target = "_blank";
+      link.rel = "noopener";
       return link;
     }));
 
     renderReportQuality(data);
-    renderOverlap(data);
+    renderOverlap(data, verdictChanges);
     const rows = [["Модель", data.baseline.model || "—", data.verified.model || "—", "—"],
       metricRow("Вопросов в запуске", data.baseline.n_questions, data.verified.n_questions)];
     const addMetrics = (fields, baseline, verified, showDelta = true) => {
@@ -216,7 +236,7 @@ if (page === "compare") {
     const counts = new Map(data.transitions.map((cell) => [JSON.stringify([cell.baseline, cell.verified]), cell.count]));
     const matrix = labels.map((from) => [from, ...labels.map((to) => counts.get(JSON.stringify([from, to])) ?? 0)]);
     byId("comparison-matrix").replaceChildren(matrix.length
-      ? table(["Baseline / Verified", ...labels], matrix, (row, column) => row !== column && matrix[row][column + 1] > 0)
+      ? table(["Чистый / улучшенный", ...labels], matrix, (row, column) => row !== column && matrix[row][column + 1] > 0)
       : node("p", "Матрица появится при наличии общих вопросов.", "hint"));
     questions = data.questions;
     scored = Boolean(data.quality);
@@ -254,14 +274,13 @@ if (page === "compare") {
       await loadLegacyQuality(data, params);
       render(data, params);
       history.replaceState(null, "", `/compare?${params}`);
-      state.textContent = "Сравнение готово.";
     } catch (failure) {
       error.textContent = failure.message || "Не удалось сравнить запуски.";
       error.hidden = false;
-      state.textContent = "";
     } finally {
+      state.textContent = "";
       selects.forEach((select) => { select.disabled = false; });
-      submit.disabled = false;
+      submit.disabled = selects.some((select) => !select.value);
     }
   }
 

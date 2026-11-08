@@ -25,7 +25,7 @@ from src.progress import emit
 
 STATIC = Path(__file__).with_name('static')
 ASSETS = {'/': 'index.html', '/new': 'index.html', '/settings': 'index.html', '/tests': 'index.html',
-          '/compare': 'index.html', '/style.css': 'style.css', '/app.js': 'app.js',
+          '/tests/create': 'index.html', '/compare': 'index.html', '/style.css': 'style.css', '/app.js': 'app.js',
           '/test-data.js': 'test-data.js', '/comparison.js': 'comparison.js'}
 REPORT_FILES = {
     'report.html', 'answers.csv', 'answers.json', 'evaluation.csv', 'evaluation.json',
@@ -137,6 +137,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         path = request.path
         if path in ASSETS:
             self._file(STATIC / ASSETS[path])
+        elif re.fullmatch(r'/tests/[^/]+/edit', path):
+            self._file(STATIC / 'index.html')
         elif path == '/api/runs':
             self._json(200, self.server.jobs.list())
         elif path == '/api/compare':

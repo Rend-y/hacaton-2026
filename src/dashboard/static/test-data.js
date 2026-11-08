@@ -1,14 +1,12 @@
 "use strict";
 
-if (page === "tests") {
-  document.title = "Тестовые наборы · Ответы по документам";
+if (page === "tests" || page === "test-editor") {
   const form = byId("test-form");
+  const saveButton = byId("save-test");
   const cases = byId("test-cases");
   const addButton = byId("add-test-case");
-  const cancelEdit = byId("cancel-test-edit");
   const documents = byId("test-documents");
   const formError = byId("test-form-error");
-  const success = byId("test-form-success");
   let editing = null;
 
   function numberCases() {
@@ -61,10 +59,12 @@ if (page === "tests") {
   }
 
   function runButtons(url, name, payload) {
-    return [["baseline", "Baseline"], ["verified", "Verified"]].map(([mode, label]) => {
-      const button = node("button", `Запустить ${label}`, "button secondary");
+    return [["baseline", "Чистый запрос"], ["verified", "Улучшенный запрос"]].map(([mode, label]) => {
+      const button = node("button", "", "button test-run");
+      button.append(node("span", "Запустить", "test-run-verb"), node("span", label));
       button.type = "button";
-      button.setAttribute("aria-label", `Запустить ${label} для набора «${name}»`);
+      button.dataset.mode = mode;
+      button.setAttribute("aria-label", `Запустить «${label}» для набора «${name}»`);
       button.addEventListener("click", () => runTest(url, { ...payload, mode }, button));
       return button;
     });
@@ -72,10 +72,7 @@ if (page === "tests") {
 
   function fillForm(test = null) {
     editing = test;
-    form.reset();
-    cases.replaceChildren();
     (test?.cases ?? [{}]).forEach((values) => addCase(values));
-    byId("test-form-title").textContent = test ? "Редактирование набора" : "Новый набор";
     byId("test-name").value = test?.name ?? "";
     documents.required = !test;
     const current = byId("test-current-documents");
@@ -83,26 +80,32 @@ if (page === "tests") {
     current.textContent = test
       ? `Текущие файлы: ${test.documents.join(", ")}. Чтобы заменить их, выберите полный новый комплект.`
       : "";
-    cancelEdit.hidden = !test;
-    formError.hidden = true;
-    success.hidden = true;
+    form.hidden = false;
   }
 
-  async function editTest(name, button) {
-    const error = byId("test-list-error");
-    error.hidden = true;
-    button.disabled = true;
+  async function loadEditor() {
+    const title = byId("test-editor-title");
+    if (testEditRoute) title.textContent = "Редактирование тестового набора";
+    document.title = `${title.textContent} · Ответы по документам`;
+    if (!testEditRoute) {
+      fillForm();
+      return;
+    }
+    const status = byId("test-editor-status");
+    status.hidden = false;
     try {
-      const response = await fetch(`/api/tests/details?name=${encodeURIComponent(name)}`);
+      const params = new URLSearchParams({ name: decodeURIComponent(testEditRoute[1]) });
+      const response = await fetch(`/api/tests/details?${params}`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
       fillForm(data);
-      byId("test-name").focus();
     } catch (failure) {
-      error.textContent = failure.message || "Не удалось открыть набор для редактирования.";
+      const error = byId("test-editor-error");
+      error.textContent = failure instanceof URIError ? "Некорректный адрес тестового набора."
+        : failure.message || "Не удалось открыть набор для редактирования.";
       error.hidden = false;
     } finally {
-      button.disabled = false;
+      status.hidden = true;
     }
   }
 
@@ -118,10 +121,9 @@ if (page === "tests") {
         const item = document.createElement("li");
         const details = document.createElement("div");
         details.append(node("strong", test.name), node("span", `Файлов: ${test.documents} · Вопросов: ${test.questions}`, "run-meta"));
-        const edit = node("button", "Редактировать", "button secondary");
-        edit.type = "button";
+        const edit = node("a", "Редактировать", "button secondary");
+        edit.href = `/tests/${encodeURIComponent(test.name)}/edit`;
         edit.setAttribute("aria-label", `Редактировать набор «${test.name}»`);
-        edit.addEventListener("click", () => editTest(test.name, edit));
         const actions = document.createElement("div");
         actions.className = "test-actions";
         actions.append(...runButtons("/api/tests/run", test.name, { name: test.name }), edit);
@@ -140,14 +142,8 @@ if (page === "tests") {
     }
   }
 
-  addButton.addEventListener("click", () => addCase({}, true));
-  cancelEdit.addEventListener("click", () => { fillForm(); byId("test-name").focus(); });
-  byId("p01-actions").append(...runButtons("/api/tests/p01", "Контрольный тест P01", {}));
-  addCase();
-  loadTests();
-  form.addEventListener("submit", async (event) => {
+  async function saveTest(event) {
     event.preventDefault();
-    const button = form.querySelector('button[type="submit"]');
     const body = new FormData(form);
     if (editing) {
       body.set("original", editing.name);
@@ -159,20 +155,31 @@ if (page === "tests") {
     ));
     body.set("cases", JSON.stringify(rows));
     formError.hidden = true;
-    success.hidden = true;
-    button.disabled = true;
+    saveButton.disabled = true;
     try {
       const response = await fetch(editing ? "/api/tests/edit" : form.action, { method: "POST", body });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
-      fillForm();
-      success.hidden = false;
-      await loadTests();
+      location.assign("/tests?saved=1");
     } catch (failure) {
       formError.textContent = failure.message || "Не удалось сохранить тест.";
       formError.hidden = false;
     } finally {
-      button.disabled = false;
+      saveButton.disabled = false;
     }
-  });
+  }
+
+  if (page === "tests") {
+    document.title = "Тестовые наборы · Ответы по документам";
+    if (new URLSearchParams(location.search).get("saved") === "1") {
+      byId("test-list-success").hidden = false;
+      history.replaceState(null, "", "/tests");
+    }
+    byId("p01-actions").append(...runButtons("/api/tests/p01", "Контрольный тест P01", {}));
+    loadTests();
+  } else {
+    addButton.addEventListener("click", () => addCase({}, true));
+    form.addEventListener("submit", saveTest);
+    loadEditor();
+  }
 }

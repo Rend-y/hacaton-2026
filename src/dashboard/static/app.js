@@ -1,7 +1,9 @@
 "use strict";
 
 const byId = (id) => document.getElementById(id);
-const page = new Map([["/new", "new"], ["/settings", "settings"], ["/tests", "tests"], ["/compare", "compare"]]).get(location.pathname) ?? "runs";
+const testEditRoute = /^\/tests\/([^/]+)\/edit$/.exec(location.pathname);
+const page = new Map([["/new", "new"], ["/settings", "settings"], ["/tests", "tests"], ["/tests/create", "test-editor"], ["/compare", "compare"]])
+  .get(location.pathname) ?? (testEditRoute ? "test-editor" : "runs");
 const statuses = new Map([
   ["running", "В процессе"],
   ["completed", "Завершена"],
@@ -13,8 +15,10 @@ const runKinds = new Map([["manual", "Вручную"], ["cli", "CLI"], ["benchm
 const dateFormat = new Intl.DateTimeFormat("ru", { dateStyle: "short", timeStyle: "short" });
 let previous = "";
 
+setupTheme();
+setupSidebarMenu();
 byId(`${page}-page`).hidden = false;
-byId(`${page}-link`).setAttribute("aria-current", "page");
+byId(`${page === "test-editor" ? "tests" : page}-link`).setAttribute("aria-current", page === "test-editor" ? "location" : "page");
 if (page === "new") {
   document.title = "Новая обработка · Ответы по документам";
   byId("launch-form").addEventListener("submit", submitRun);
@@ -32,6 +36,49 @@ if (page === "new") {
   loadSettings();
 } else if (page === "runs") {
   refreshRuns();
+}
+
+function setupTheme() {
+  const toggle = byId("theme-toggle");
+  const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
+  const storageKey = "document-dashboard-theme";
+  let preference;
+  try {
+    preference = localStorage.getItem(storageKey);
+  } catch {
+    // The theme still works for this page when storage is unavailable.
+  }
+  const applyTheme = () => {
+    const dark = preference === "dark" || (preference !== "light" && systemTheme.matches);
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    const action = dark ? "Включить светлую тему" : "Включить тёмную тему";
+    toggle.setAttribute("aria-label", action);
+    toggle.title = action;
+  };
+  toggle.addEventListener("click", () => {
+    preference = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    applyTheme();
+    try {
+      localStorage.setItem(storageKey, preference);
+    } catch {
+      // The current theme is already applied.
+    }
+  });
+  systemTheme.addEventListener("change", applyTheme);
+  applyTheme();
+  toggle.hidden = false;
+}
+
+function setupSidebarMenu() {
+  const toggle = byId("sidebar-menu");
+  const isOpen = () => toggle.getAttribute("aria-expanded") === "true";
+  toggle.addEventListener("click", () => toggle.setAttribute("aria-expanded", String(!isOpen())));
+  toggle.parentElement.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !isOpen() || toggle.getClientRects().length === 0) return;
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.focus();
+  });
+  toggle.hidden = false;
 }
 
 function node(tag, text, className) {
