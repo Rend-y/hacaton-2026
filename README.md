@@ -4,27 +4,46 @@
 
 ## Быстрый старт
 
-Нужен Python 3.10 или новее. Выполняйте команды из корня проекта.
+Выберите подробную инструкцию своей ОС. В каждой описаны установка с нуля, настройка модели, работа с CLI и дашбордом, подключение MCP, установка skill и устранение ошибок.
 
-**Windows (PowerShell)**
+| ОС | Инструкция |
+| --- | --- |
+| Windows | [PowerShell: от установки Python до первого ответа](docs/setup-windows.md) |
+| macOS | [Terminal: установка через Homebrew или готовый Python](docs/setup-macos.md) |
+| Linux | [Ubuntu/Debian, Fedora и работа на удалённом сервере](docs/setup-linux.md) |
+
+[Общее руководство по MCP, Skills, CLI и дашборду](docs/connection-guide.md) объясняет выбор режима, инструменты, результаты и ограничения. Готовый skill запускает CLI с API проекта; MCP использует модель подключённого агента. Для MCP отдельный API-ключ проекта не требуется.
+
+Если Git и Python уже установлены, короткий вариант подготовки из корня репозитория:
+
+**Windows / PowerShell** — пример с Python 3.12; при другой установленной версии 3.10+ выберите её в первой команде.
 
 ```powershell
-.\src\setup.ps1
-.\run.ps1 --help
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-mcp.txt -r requirements-pdf.txt
+if (-not (Test-Path -LiteralPath '.env')) { Copy-Item -LiteralPath '.env.example' -Destination '.env' }
+.\.venv\Scripts\python.exe -m src --help
 ```
 
-Скрипт создаёт окружение `.venv`, устанавливает зависимости и при первом запуске копирует `.env.example` в `.env`. Для поддержки PDF запустите `.\src\setup.ps1 -WithPdf`.
-
-**Linux и macOS**
+**macOS / Terminal** — убедитесь, что `python3 --version` показывает 3.10 или новее.
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip install -r requirements.txt -r requirements-mcp.txt -r requirements-pdf.txt
 test -f .env || cp .env.example .env
 .venv/bin/python -m src --help
 ```
 
-Для поддержки PDF установите также `requirements-pdf.txt`. В примерах ниже заменяйте `.\run.ps1` на `.venv/bin/python -m src`. В Windows можно запускать CLI напрямую через `.\.venv\Scripts\python.exe -m src`.
+**Linux / bash** — предварительно установите Python 3.10+ и пакет `venv` своего дистрибутива.
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt -r requirements-mcp.txt -r requirements-pdf.txt
+test -f .env || cp .env.example .env
+.venv/bin/python -m src --help
+```
+
+Если рабочее окружение `.venv` уже создано, пропустите его создание. Активация окружения не требуется. На Windows также доступен `.\src\setup.ps1 -WithPdf`; MCP-зависимости после него устанавливаются отдельно. В примерах ниже `.\run.ps1` — обёртка PowerShell; на macOS/Linux используйте `.venv/bin/python -m src`, на Windows можно использовать `.\.venv\Scripts\python.exe -m src` напрямую.
 
 ### Настройте модель
 
