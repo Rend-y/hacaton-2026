@@ -114,10 +114,10 @@ def _operations(run):
     metrics = [
         _metric('Вопросов в запуске', _number(run.get('n_questions')), 'Объём переданного задания'),
         _metric('Время обработки', _duration(operations.get('elapsed_seconds')), 'Включая ожидание и повторы'),
-        _metric('Запросов к API', _number(operations.get('requests')), 'Включая сетевые повторы'),
-        _metric('Технических отказов', _number(operations.get('technical_errors')), 'Сбои API, чтения или формата'),
+        _metric('Запросов к модели', _number(operations.get('requests')), 'Включая повторы'),
+        _metric('Технических отказов', _number(operations.get('technical_errors')), 'Сбои генерации, чтения или формата'),
     ]
-    secondary = '<div class="operations-detail"><span>Токены входа: <b>%s</b></span><span>Токены выхода: <b>%s</b></span><span>API-запросы исправления: <b>%s</b></span></div>' % (
+    secondary = '<div class="operations-detail"><span>Токены входа: <b>%s</b></span><span>Токены выхода: <b>%s</b></span><span>Запросы исправления: <b>%s</b></span></div>' % (
         _e(_number(operations.get('prompt_tokens'))), _e(_number(operations.get('completion_tokens'))), _e(_number(operations.get('repair_requests'))))
     documents = run.get('document_names') or []
     if documents:
@@ -247,7 +247,7 @@ def _comparison(model):
     ])
     rows = []
     labels = [('correct', 'Верных ответов'), ('lies', 'Ошибочных ответов'), ('careful', 'Осторожных ответов'),
-              ('elapsed_seconds', 'Время обработки, с'), ('requests', 'Запросов к API')]
+              ('elapsed_seconds', 'Время обработки, с'), ('requests', 'Запросов к модели')]
     for key, name in labels:
         if key not in before and key not in after:
             continue
@@ -272,9 +272,9 @@ def _configuration(run):
     config = run.get('config') or {}
     labels = {'temperature': 'Температура', 'max_tokens': 'Лимит токенов ответа', 'workers': 'Рабочих потоков',
               'context_token_limit': 'Лимит контекста',
-              'repair_attempts': 'Разрешено исправлений', 'timeout_seconds': 'Таймаут HTTP, с',
+              'repair_attempts': 'Разрешено исправлений', 'timeout_seconds': 'Ожидание ответа, с',
               'max_questions_per_request': 'Максимум вопросов в запросе',
-              'max_requests': 'Лимит HTTP-запросов',
+              'max_requests': 'Лимит запросов',
               'created_at': 'Время начала запуска', 'input_fingerprint': 'Отпечаток входных данных'}
     values = [('Модель', run.get('model')), ('Режим', run.get('mode'))]
     values.extend((label, config[key]) for key, label in labels.items() if config.get(key) is not None)

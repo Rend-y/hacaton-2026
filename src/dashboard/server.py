@@ -25,7 +25,7 @@ from src.progress import emit
 
 
 STATIC = Path(__file__).with_name('static')
-ASSETS = {'/': 'index.html', '/new': 'index.html', '/settings': 'index.html', '/tests': 'index.html',
+ASSETS = {'/': 'index.html', '/new': 'index.html', '/settings': 'index.html', '/tests': 'index.html', '/mcp': 'index.html',
           '/tests/create': 'index.html', '/compare': 'index.html', '/agent': 'index.html',
           '/style.css': 'style.css', '/app.js': 'app.js', '/agent.js': 'agent.js',
           '/test-data.js': 'test-data.js', '/comparison.js': 'comparison.js'}

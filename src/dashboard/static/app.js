@@ -2,7 +2,7 @@
 
 const byId = (id) => document.getElementById(id);
 const testEditRoute = /^\/tests\/([^/]+)\/edit$/.exec(location.pathname);
-const page = new Map([["/new", "new"], ["/settings", "settings"], ["/tests", "tests"], ["/tests/create", "test-editor"], ["/compare", "compare"], ["/agent", "agent"]])
+const page = new Map([["/new", "new"], ["/settings", "settings"], ["/tests", "tests"], ["/tests/create", "test-editor"], ["/compare", "compare"], ["/agent", "agent"], ["/mcp", "mcp"]])
   .get(location.pathname) ?? (testEditRoute ? "test-editor" : "runs");
 const statuses = new Map([
   ["running", "В процессе"],
@@ -34,10 +34,27 @@ if (page === "new") {
   document.title = "Настройки · Ответы по документам";
   byId("settings-form").addEventListener("submit", saveSettings);
   loadSettings();
+} else if (page === "mcp") {
+  document.title = "Подключение MCP · Ответы по документам";
+  for (const button of byId("mcp-page").querySelectorAll("[data-mcp-copy]")) {
+    button.addEventListener("click", copyMcpSnippet);
+  }
 } else if (page === "agent") {
   document.title = "Агент · Ответы по документам";
 } else if (page === "runs") {
   refreshRuns();
+}
+
+async function copyMcpSnippet(event) {
+  const button = event.currentTarget;
+  const status = button.nextElementSibling;
+  status.textContent = "";
+  try {
+    await navigator.clipboard.writeText(byId(button.dataset.mcpCopy).textContent);
+    status.textContent = "Скопировано";
+  } catch {
+    status.textContent = "Выделите текст и скопируйте вручную.";
+  }
 }
 
 function setupTheme() {

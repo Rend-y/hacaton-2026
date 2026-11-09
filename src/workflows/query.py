@@ -46,6 +46,10 @@ def _questions(values):
     return result
 
 
+# Общая проверка вопросов для интеграций без изменения сценария CLI.
+question_rows = _questions
+
+
 def _output_path():
     """Результаты получают новую папку автоматически, без дополнительных параметров."""
     name = datetime.now().strftime('%Y%m%d-%H%M%S-%f') + '-query'

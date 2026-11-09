@@ -23,7 +23,7 @@ from src.settings import RunOptions
 
 
 def run_groups(options: RunOptions, questions, package_data, source_metadata=None, *,
-               batch_limit: int, environ=None) -> int:
+               batch_limit: int, environ=None, client=None, log=None) -> int:
     """Сохраняет снимок, выполняет запрос с проверками и формирует локальный отчёт."""
     grouped = {}
     for question in questions:
@@ -43,13 +43,14 @@ def run_groups(options: RunOptions, questions, package_data, source_metadata=Non
     if not 0 <= options.repair_attempts <= 3:
         raise ValueError('repair-attempts must be 0–3')
     environ = os.environ if environ is None else environ
-    client = Client(environ.get('API_KEY', ''), environ.get('BASE_URL', ''),
-                    environ.get('MODEL', ''), options.timeout, options.max_tokens,
-                    context_token_limit=options.context_token_limit, max_workers=options.max_workers,
-                    max_requests=options.max_requests, temperature=options.temperature,
-                    tokenizer_path=options.tokenizer_path)
+    if client is None:
+        client = Client(environ.get('API_KEY', ''), environ.get('BASE_URL', ''),
+                        environ.get('MODEL', ''), options.timeout, options.max_tokens,
+                        context_token_limit=options.context_token_limit, max_workers=options.max_workers,
+                        max_requests=options.max_requests, temperature=options.temperature,
+                        tokenizer_path=options.tokenizer_path)
     output.mkdir(parents=True, exist_ok=True)
-    progress = RunLog(output / 'progress.log', emit, secrets=(client.key,))
+    progress = RunLog(output / 'progress.log', log or emit, secrets=(client.key,))
     write_json(output / 'inputs.json', input_data)
     write_json(output / 'prompts.json', {'baseline': BASELINE, 'verified': VERIFIED,
                                       'context_summary': SUMMARY_PROMPT, 'context_final': FINAL_TASK})
@@ -57,7 +58,9 @@ def run_groups(options: RunOptions, questions, package_data, source_metadata=Non
 
     def trace(event):
         # Дополнительная очистка не допускает попадания настроенного ключа в журнал.
-        line = json.dumps(event, ensure_ascii=False).replace(client.key, '[redacted]')
+        line = json.dumps(event, ensure_ascii=False)
+        if client.key:
+            line = line.replace(client.key, '[redacted]')
         with lock:
             with (output / 'trace.jsonl').open('a', encoding='utf-8') as stream:
                 stream.write(line + '\n')
@@ -65,7 +68,7 @@ def run_groups(options: RunOptions, questions, package_data, source_metadata=Non
     started = time.monotonic()
     manifest = {'model': client.model, 'base_url': client.base_url, 'mode': options.mode,
                 'token_counter': getattr(getattr(client, 'token_counter', None), 'name', 'utf8_bytes'),
-                'temperature': options.temperature,
+                'temperature': getattr(client, 'temperature', options.temperature),
                 'max_tokens': options.max_tokens, 'context_token_limit': options.context_token_limit,
                 'input_fingerprint': fingerprint, 'timeout_seconds': options.timeout,
                 'question_ids': [q['id'] for q in questions], 'created_at': datetime.now(timezone.utc).isoformat(),
@@ -131,6 +134,6 @@ def run_groups(options: RunOptions, questions, package_data, source_metadata=Non
     report_path = write_run_report(output)
     progress('HTML-отчёт: ' + str(report_path))
     progress('Готово. CSV: ' + str(output / 'answers.csv'))
-    progress('Запросов к API: %s; время: %.1f с; технически не обработано вопросов: %s. manifest.json и trace.jsonl сохранены.' %
+    progress('Запросов к модели: %s; время: %.1f с; технически не обработано вопросов: %s. manifest.json и trace.jsonl сохранены.' %
              (client.stats['requests'], manifest['elapsed_seconds'], len(failures)))
     return 2 if failures else 0
