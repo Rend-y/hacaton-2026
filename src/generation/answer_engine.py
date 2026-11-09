@@ -8,6 +8,7 @@ import time
 
 from src.generation.answers import abstain, calculate, parse_answers, parse_baseline_answers
 from src.generation.client import ApiError, ResponseTruncated
+from src.generation.context_loop import DocumentLoop, client_limits, request_fits
 from src.progress import RunLog, emit
 from src.generation.prompts import messages
 from src.settings import question_batch_limit
@@ -26,7 +27,8 @@ def log_batch_plan(package, groups, limit, trace, progress, *, batch='root'):
 
 
 def process_questions(client, mode, package, questions, documents, read_errors, attempts, trace, progress=None,
-                      *, batch_limit=None, _start_attempt=0, _correction=None, _batch='root'):
+                      *, batch_limit=None, context_limits=None, token_counter=None,
+                      _start_attempt=0, _correction=None, _batch='root'):
     """Обрабатывает общий комплект документов; повторяет только ответы с ошибками проверок.
 
     В baseline содержательные ошибки сохраняются для честного исходного замера.
@@ -35,6 +37,8 @@ def process_questions(client, mode, package, questions, documents, read_errors, 
     accepted = {}
     pending = questions[:]
     correction = _correction
+    max_tokens, context_token_limit = context_limits or client_limits(client)
+    token_counter = token_counter or getattr(client, 'token_counter', None)
     original_trace = trace
 
     def trace(event):
@@ -88,7 +92,7 @@ def process_questions(client, mode, package, questions, documents, read_errors, 
             ids = {q['id'] for q in subset}
             subset_correction = [item for item in correction or [] if item['id'] in ids] or None
             accepted.update(process_questions(client, mode, package, subset, documents, read_errors,
-                attempts, trace, log, batch_limit=batch_limit,
+                attempts, trace, log, batch_limit=batch_limit, context_limits=context_limits, token_counter=token_counter,
                 _start_attempt=_start_attempt, _correction=subset_correction,
                 _batch=_batch + '.' + str(number)))
         return accepted
@@ -99,7 +103,30 @@ def process_questions(client, mode, package, questions, documents, read_errors, 
         stage = 'первичный запрос' if attempt == 0 else 'исправление %s/%s' % (attempt, attempts)
         say('Готовим %s: весь комплект документов и %s вопросов. Эталоны модели не передаются.' % (stage, len(pending)))
         try:
-            content, meta = client.complete(request_messages, progress=api_progress)
+            if request_fits(request_messages, max_tokens, context_token_limit, token_counter):
+                content, meta = client.complete(request_messages, progress=api_progress)
+            elif len(pending) > 1:
+                say('Контекст группы слишком велик: обрабатываем вопросы отдельно с контролем объёма документов.')
+                for number, question in enumerate(pending, 1):
+                    subset_correction = [item for item in correction or [] if item['id'] == question['id']] or None
+                    accepted.update(process_questions(client, mode, package, [question], documents, read_errors,
+                        attempts, trace, log, batch_limit=batch_limit, context_limits=context_limits, token_counter=token_counter,
+                        _start_attempt=attempt, _correction=subset_correction, _batch=_batch + '.' + str(number)))
+                return accepted
+            else:
+                try:
+                    plan = DocumentLoop(mode, documents, pending[0], read_errors, correction,
+                                        max_tokens=max_tokens, context_token_limit=context_token_limit, token_counter=token_counter)
+                except ValueError as exc:
+                    raise ApiError(str(exc)) from None
+                trace({'package': package, 'attempt': attempt, 'event': 'context_plan',
+                       'id': pending[0]['id'], 'files': len(documents),
+                       'input_bytes': sum(len(text.encode('utf-8')) for text in documents.values()),
+                       'context_token_limit': context_token_limit, 'summary_bytes': plan.summary_bytes,
+                       'token_counter': token_counter.name if token_counter else 'utf8_bytes'})
+                content, meta = plan.complete(client, progress=api_progress,
+                    trace=lambda event: trace({'package': package, 'attempt': attempt, **event}),
+                    say=say, retries=attempts if mode == 'verified' else 0)
             say('Локально: разбираем JSON ответа.')
             try:
                 candidates = parse_baseline_answers(content) if mode == 'baseline' else parse_answers(content)
@@ -130,7 +157,7 @@ def process_questions(client, mode, package, questions, documents, read_errors, 
                     subset_correction = [item for item in correction or [] if item['id'] in ids] or None
                     # Не теряем принятые ответы и не обнуляем бюджет исправлений.
                     accepted.update(process_questions(client, mode, package, subset, documents, read_errors,
-                        attempts, trace, log, batch_limit=batch_limit,
+                        attempts, trace, log, batch_limit=batch_limit, context_limits=context_limits, token_counter=token_counter,
                         _start_attempt=attempt, _correction=subset_correction,
                         _batch=_batch + '.' + str(number)))
                 return accepted
@@ -167,6 +194,10 @@ def process_questions(client, mode, package, questions, documents, read_errors, 
                     trace({'package': package, 'id': question['id'], 'attempt': attempt, 'event': 'quote_restored'})
                 answer = restored
                 errors = validate_answer(answer, documents, read_errors)
+                search = meta.get('context_search', {})
+                if status == 'нет в документах' and (search.get('has_evidence') or search.get('uncertain')):
+                    errors.append('Поиск по частям нашёл релевантные сведения или неоднозначность. '
+                                  'Сопоставь их; если ответа недостаточно, используй «не знаю», а не «нет в документах».')
                 if not errors:
                     quoted = quote_fact(answer, question['question'], documents)
                     if quoted is None:

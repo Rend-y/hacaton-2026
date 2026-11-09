@@ -61,6 +61,25 @@ def _check_text(events, restored):
 
 def stages_from_trace(trace_text, progress_text=''):
     events = _trace_events(trace_text)
+    context_stages = {}
+    for event in events:
+        kind, stage = event.get('event'), event.get('stage')
+        if kind not in ('context_request', 'context_summary', 'context_summary_error'):
+            continue
+        key = tuple(event.get(field) for field in ('batch', 'id', 'attempt', 'stage', 'chunk', 'level', 'group'))
+        if stage == 'map':
+            title = 'Поиск по части %s...' % event.get('chunk', '')
+        elif stage == 'reduce':
+            title = 'Объединяем ответы: уровень %s, группа %s...' % (event.get('level', ''), event.get('group', ''))
+        elif stage == 'final':
+            title = 'Собираем итоговый ответ...'
+        else:
+            continue
+        entry = context_stages.setdefault(key, {'title': title, 'detail': ''})
+        if kind == 'context_summary':
+            entry['detail'] = json.dumps(event.get('summary', {}), ensure_ascii=False, indent=2)
+        elif kind == 'context_summary_error':
+            entry['detail'] = event.get('error', '')
     responses, checks, restored = {}, {}, set()
     requested = set()
     for event in events:
@@ -82,7 +101,7 @@ def stages_from_trace(trace_text, progress_text=''):
     if 'Готовим первичный запрос' in progress_text:
         requested.add(0)
     attempts = sorted(requested | repairs | set(responses) | set(checks) | restored)
-    stages = []
+    stages = list(context_stages.values())
     for attempt in attempts:
         if attempt == 0:
             if 0 in requested or 0 in responses or 0 in checks:

@@ -1,6 +1,6 @@
 """Связь с API модели: ключ, ограничения нагрузки, повторы и статистика.
 
-Используется только стандартная библиотека. Внутренние рассуждения модели
+Внутренние рассуждения модели
 не возвращаются вызывающему коду и не попадают в журнал.
 """
 import collections
@@ -14,13 +14,16 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from src.progress import heartbeat
+from src.generation.token_budget import get_token_counter
 from src.settings import (
     DEFAULT_CONTEXT_TOKEN_LIMIT, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE, DEFAULT_TIMEOUT_SECONDS, read_env,
 )
 
 
-def estimate_request_tokens(messages, max_tokens):
-    """Консервативная оценка по байтам UTF-8 без зависимости от токенизатора."""
+def estimate_request_tokens(messages, max_tokens, token_counter=None):
+    """Токенизатор + запас; для неизвестной модели — безопасная оценка по байтам."""
+    if token_counter is not None:
+        return token_counter.estimate(messages, max_tokens)
     return sum(len(message['content'].encode('utf-8')) + 32 for message in messages) + max_tokens
 
 
@@ -88,7 +91,7 @@ class Client:
     """Выполняет запросы к /chat/completions и повторяет только временные сбои."""
     def __init__(self, key, base_url, model, timeout=DEFAULT_TIMEOUT_SECONDS, max_tokens=DEFAULT_MAX_TOKENS,
                  *, context_token_limit=DEFAULT_CONTEXT_TOKEN_LIMIT, max_workers=2, max_requests=None,
-                 temperature=DEFAULT_TEMPERATURE):
+                 temperature=DEFAULT_TEMPERATURE, tokenizer_path=''):
         if not key:
             raise ValueError('Set API_KEY in .env or the environment')
         if not base_url:
@@ -103,6 +106,7 @@ class Client:
         self.timeout = timeout
         self.max_tokens = max_tokens
         self.context_token_limit = context_token_limit
+        self.token_counter = get_token_counter(model, tokenizer_path)
         self.max_requests = max_requests
         self.limiter = RateLimiter()
         self.semaphore = threading.BoundedSemaphore(max_workers)
@@ -138,7 +142,7 @@ class Client:
             if progress:
                 progress({'event': event, **fields})
 
-        estimate = estimate_request_tokens(messages, self.max_tokens)
+        estimate = estimate_request_tokens(messages, self.max_tokens, self.token_counter)
         if estimate > self.context_token_limit:
             raise ApiError(f'Estimated request size {estimate} exceeds CONTEXT_TOKEN_LIMIT={self.context_token_limit}')
         payload = {'model': self.model, 'messages': messages, 'temperature': self.temperature,

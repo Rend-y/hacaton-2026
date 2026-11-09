@@ -15,6 +15,7 @@ import time
 from src.generation.answer_engine import log_batch_plan, process_questions, question_batches
 from src.generation.answers import abstain
 from src.generation.client import Client
+from src.generation.context_loop import FINAL_TASK, SUMMARY_PROMPT
 from src.progress import RunLog, emit
 from src.generation.prompts import BASELINE, VERIFIED
 from src.files.run_storage import save_answers, write_json
@@ -46,11 +47,13 @@ def run_groups(options: RunOptions, questions, package_data, source_metadata=Non
         client = Client(environ.get('API_KEY', ''), environ.get('BASE_URL', ''),
                         environ.get('MODEL', ''), options.timeout, options.max_tokens,
                         context_token_limit=options.context_token_limit, max_workers=options.max_workers,
-                        max_requests=options.max_requests, temperature=options.temperature)
+                        max_requests=options.max_requests, temperature=options.temperature,
+                        tokenizer_path=options.tokenizer_path)
     output.mkdir(parents=True, exist_ok=True)
     progress = RunLog(output / 'progress.log', log or emit, secrets=(client.key,))
     write_json(output / 'inputs.json', input_data)
-    write_json(output / 'prompts.json', {'baseline': BASELINE, 'verified': VERIFIED})
+    write_json(output / 'prompts.json', {'baseline': BASELINE, 'verified': VERIFIED,
+                                      'context_summary': SUMMARY_PROMPT, 'context_final': FINAL_TASK})
     lock = threading.Lock()
 
     def trace(event):
@@ -64,6 +67,7 @@ def run_groups(options: RunOptions, questions, package_data, source_metadata=Non
 
     started = time.monotonic()
     manifest = {'model': client.model, 'base_url': client.base_url, 'mode': options.mode,
+                'token_counter': getattr(getattr(client, 'token_counter', None), 'name', 'utf8_bytes'),
                 'temperature': getattr(client, 'temperature', options.temperature),
                 'max_tokens': options.max_tokens, 'context_token_limit': options.context_token_limit,
                 'input_fingerprint': fingerprint, 'timeout_seconds': options.timeout,
@@ -83,7 +87,8 @@ def run_groups(options: RunOptions, questions, package_data, source_metadata=Non
         try:
             return process_questions(client, options.mode, name, rows, documents,
                                      read_errors, options.repair_attempts, trace, progress,
-                                     batch_limit=batch_limit, _batch=batch)
+                                     batch_limit=batch_limit,
+                                     context_limits=(options.max_tokens, options.context_token_limit), _batch=batch)
         except Exception as exc:
             reason = 'Internal input failure: ' + type(exc).__name__
             trace({'package': name, 'batch': batch, 'event': 'internal_error', 'error': reason})
