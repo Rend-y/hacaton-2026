@@ -5,6 +5,7 @@
 """
 from datetime import datetime
 import json
+import os
 from pathlib import Path
 
 from src.workflows import pipeline
@@ -12,9 +13,9 @@ from src import settings
 from src.progress import emit
 from src.settings import QueryOptions, RunOptions
 from src.files.input_loader import MAX_QUESTIONS, MAX_QUESTION_CHARS, load_documents
-from src.generation.answer_engine import question_batches
-from src.generation.client import estimate_request_tokens, load_env
-from src.generation.prompts import messages
+from src.generation.client import load_env
+from src.generation.context_loop import validate_context
+from src.generation.token_budget import get_token_counter
 from src.generation.validation import citation_error
 
 
@@ -59,20 +60,17 @@ def _run_batch(args: QueryOptions, loaded, rows, output: Path | None = None, *, 
         plan = plan_query_evaluation(rows, loaded['documents'], loaded['read_errors'], evaluation_data)
         emit('Для оценки сопоставлено вопросов: %s; пакет: %s. Эталоны ответов ещё не загружались.' %
                  (len(plan['matches']), plan['package']))
-    # Используем ту же консервативную оценку контекста, что и API-клиент. Большой
-    # набор отклоняется до запроса, а не урезается скрытно до удобного размера.
+    # Большие документы обрабатываются частями; до API проверяем, что в контекст
+    # помещаются обязательные инструкции, вопрос и минимальная сводка.
     if environ is None:
         load_env(settings.ROOT / '.env')
     batch_limit = settings.question_batch_limit(environ)
     options = RunOptions.from_env(args.mode, output or _output_path(), repair_attempts=args.repair_attempts,
                                   max_tokens=args.max_tokens, timeout=args.timeout, environ=environ)
-    for batch in question_batches(rows, batch_limit):
-        payload = messages(args.mode, loaded['documents'], batch, loaded['read_errors'])
-        estimate = estimate_request_tokens(payload, options.max_tokens)
-        if estimate > options.context_token_limit:
-            raise ValueError(f'Оценка размера группы ({estimate}) превышает '
-                             f'CONTEXT_TOKEN_LIMIT={options.context_token_limit}. '
-                             'Сократите вопросы или объём документов.')
+    validate_context(args.mode, loaded['documents'], rows, loaded['read_errors'],
+                     max_tokens=options.max_tokens, context_token_limit=options.context_token_limit,
+                     token_counter=get_token_counter((os.environ if environ is None else environ).get('MODEL', ''),
+                                                     options.tokenizer_path))
     output = options.output
     package_data = {'INPUT': (loaded['documents'], loaded['read_errors'])}
     source_metadata = {'sources': loaded['sources'], 'skipped': loaded['skipped']}

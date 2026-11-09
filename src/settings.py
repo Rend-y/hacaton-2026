@@ -16,6 +16,7 @@ DEFAULT_CONTEXT_TOKEN_LIMIT = 128_000
 DEFAULT_MAX_QUESTIONS_PER_REQUEST = 5
 DEFAULT_MAX_WORKERS = 1
 GENERATION_DEFAULTS = {
+    'TOKENIZER_PATH': '',
     'BASE_URL': '', 'MODEL': '', 'API_KEY': '', 'MAX_REQUESTS': '',
     'TEMPERATURE': str(DEFAULT_TEMPERATURE),
     'TIMEOUT_SECONDS': str(DEFAULT_TIMEOUT_SECONDS), 'MAX_TOKENS': str(DEFAULT_MAX_TOKENS),
@@ -80,6 +81,7 @@ class RunOptions:
     max_workers: int = DEFAULT_MAX_WORKERS
     max_requests: int | None = None
     temperature: float = DEFAULT_TEMPERATURE
+    tokenizer_path: str = ''
 
     def __post_init__(self):
         if not 0 <= self.temperature <= 2:
@@ -110,4 +112,5 @@ class RunOptions:
                    max_tokens=_positive_env_int(environ, 'MAX_TOKENS', max_tokens), timeout=timeout,
                    context_token_limit=_positive_env_int(environ, 'CONTEXT_TOKEN_LIMIT', DEFAULT_CONTEXT_TOKEN_LIMIT),
                    max_workers=_positive_env_int(environ, 'MAX_WORKERS', DEFAULT_MAX_WORKERS),
-                   max_requests=max_requests, temperature=temperature)
+                   max_requests=max_requests, temperature=temperature,
+                   tokenizer_path=environ.get('TOKENIZER_PATH', ''))
